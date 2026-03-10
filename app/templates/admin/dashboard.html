@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% set title = 'Admin Dashboard' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+    <div>
+        <p class="eyebrow mb-1">Team lead console</p>
+        <h1 class="h3 mb-1">{{ user.first_name }} {{ user.last_name }}</h1>
+        <p class="text-secondary mb-0">Manage team members, inspect updates, and prepare weekly reports.</p>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Add Team Member</h2>
+                <form method="post" action="/admin/users" class="vstack gap-3">
+                    <input class="form-control" type="text" name="first_name" placeholder="First name" required>
+                    <input class="form-control" type="text" name="last_name" placeholder="Last name">
+                    <input class="form-control" type="email" name="email" placeholder="Email address" required>
+                    <div class="small text-secondary">Default password will be the first name.</div>
+                    <button class="btn btn-dark" type="submit">Create User</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h5 mb-0">Team Members</h2>
+                    <span class="badge text-bg-light">{{ team_members|length }} members</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for member in team_members %}
+                            <tr>
+                                <td>{{ member.first_name }} {{ member.last_name }}</td>
+                                <td>{{ member.email }}</td>
+                                <td>
+                                    {% if member.is_active %}
+                                    <span class="badge text-bg-success">Active</span>
+                                    {% else %}
+                                    <span class="badge text-bg-secondary">Disabled</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-flex justify-content-end gap-2">
+                                        <form method="post" action="/admin/users/{{ member.id }}/reset-password">
+                                            <button class="btn btn-sm btn-outline-dark" type="submit">Reset Password</button>
+                                        </form>
+                                        <form method="post" action="/admin/users/{{ member.id }}/toggle">
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">{{ 'Disable' if member.is_active else 'Enable' }}</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-secondary">No team members added yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Generate Weekly Report</h2>
+                <form method="post" action="/admin/reports/generate" class="vstack gap-3">
+                    <div>
+                        <label class="form-label">Week Start</label>
+                        <input class="form-control" type="date" name="week_start" value="{{ week_start }}" required>
+                    </div>
+                    <div>
+                        <label class="form-label">Week End</label>
+                        <input class="form-control" type="date" name="week_end" value="{{ week_end }}" required>
+                    </div>
+                    <button class="btn btn-dark" type="submit">Generate Summary</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
+                    <h2 class="h5 mb-0">Filter Daily Updates</h2>
+                    <form method="get" action="/admin/dashboard" class="row g-2">
+                        <div class="col-auto">
+                            <input class="form-control" type="text" name="member_name" value="{{ filters.member_name }}" placeholder="Name or email">
+                        </div>
+                        <div class="col-auto">
+                            <input class="form-control" type="date" name="update_date" value="{{ filters.update_date }}">
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-outline-dark" type="submit">Filter</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="table-responsive updates-table">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Member</th>
+                                <th>Plan</th>
+                                <th>Extra Work</th>
+                                <th>Challenges</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in updates %}
+                            <tr>
+                                <td>{{ item.date }}</td>
+                                <td>
+                                    <div>{{ item.member_name }}</div>
+                                    <div class="small text-secondary">{{ item.email }}</div>
+                                </td>
+                                <td>{{ item.plan or '-' }}</td>
+                                <td>{{ item.extra_work or '-' }}</td>
+                                <td>{{ item.challenges or '-' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-secondary">No updates found for the selected filter.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0">Saved Weekly Reports</h2>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Status</th>
+                        <th>Generated</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>{{ report.week_start }} to {{ report.week_end }}</td>
+                        <td><span class="badge text-bg-dark text-capitalize">{{ report.status }}</span></td>
+                        <td>{{ report.generated_at|dateformat }}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-dark" href="/admin/reports/{{ report.id }}/preview">Open</a>
+                            <a class="btn btn-sm btn-dark" href="/admin/reports/{{ report.id }}/download">Download PDF</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-secondary">No finalized reports yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

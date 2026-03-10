@@ -1,0 +1,68 @@
+:root {
+    --bg: #f6f7f4;
+    --surface: #ffffff;
+    --ink: #132a13;
+    --muted: #5f6b5f;
+    --line: #d7ddd2;
+    --accent: #31572c;
+    --accent-soft: #ecf3e8;
+}
+
+body {
+    background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 60%);
+    color: var(--ink);
+}
+
+.navbar-brand {
+    letter-spacing: 0.02em;
+}
+
+.eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    color: var(--muted);
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+}
+
+.auth-card {
+    background: linear-gradient(180deg, #ffffff 0%, #f2f7ef 100%);
+}
+
+.btn-dark {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.btn-dark:hover,
+.btn-dark:focus {
+    background-color: #274723;
+    border-color: #274723;
+}
+
+.form-control,
+.table {
+    border-color: var(--line);
+}
+
+.history-card {
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 0.85rem;
+    background: var(--accent-soft);
+}
+
+.updates-table td,
+.report-edit-table td {
+    min-width: 180px;
+    vertical-align: top;
+}
+
+.min-vh-75 {
+    min-height: 75vh;
+}

@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% set title = 'Report Preview' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+    <div>
+        <p class="eyebrow mb-1">Weekly report editor</p>
+        <h1 class="h3 mb-1">{{ report.week_start }} to {{ report.week_end }}</h1>
+        <p class="text-secondary mb-0">Review the AI-generated summary, edit any cell, then confirm to save and download the PDF.</p>
+    </div>
+    {% if report.status == 'final' %}
+    <a class="btn btn-dark" href="/admin/reports/{{ report.id }}/download">Download PDF</a>
+    {% endif %}
+</div>
+
+<form method="post" action="/admin/reports/{{ report.id }}/save" class="vstack gap-4">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+            <label class="form-label">Team Summary</label>
+            <textarea class="form-control" name="team_summary" rows="4">{{ report.team_summary }}</textarea>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle report-edit-table">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Weekly Activity</th>
+                            <th>Extra Work</th>
+                            <th>Challenges</th>
+                            <th>Manager Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in report.rows %}
+                        <tr>
+                            <td>
+                                <input class="form-control" name="member_name_{{ loop.index0 }}" value="{{ row.member_name }}">
+                            </td>
+                            <td>
+                                <textarea class="form-control" name="activity_summary_{{ loop.index0 }}" rows="4">{{ row.activity_summary }}</textarea>
+                            </td>
+                            <td>
+                                <textarea class="form-control" name="extra_work_summary_{{ loop.index0 }}" rows="4">{{ row.extra_work_summary }}</textarea>
+                            </td>
+                            <td>
+                                <textarea class="form-control" name="challenges_summary_{{ loop.index0 }}" rows="4">{{ row.challenges_summary }}</textarea>
+                            </td>
+                            <td>
+                                <textarea class="form-control" name="manager_notes_{{ loop.index0 }}" rows="4">{{ row.manager_notes }}</textarea>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <input type="hidden" name="row_count" value="{{ report.rows|length }}">
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+            <label class="form-label">Overall Challenges</label>
+            <textarea class="form-control" name="overall_challenges" rows="3">{{ report.overall_challenges }}</textarea>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2">
+        <a class="btn btn-outline-dark" href="/admin/dashboard">Back</a>
+        <button class="btn btn-dark" type="submit">Confirm and Download PDF</button>
+    </div>
+</form>
+{% endblock %}
