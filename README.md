@@ -6,14 +6,17 @@ A minimal FastAPI + MongoDB application for team members to submit daily plans a
 
 - Session-based login for team leads and team members
 - Team lead user management
+- Team lead self-service password change from the admin dashboard
 - Add member by email, with first name as default password
 - Disable or re-enable member accounts
 - Reset member password back to the first name
-- Member daily update form for plan, completed work, extra work, and challenges
+- Member self-service password change from the member dashboard
+- Member daily update form for plan, completed work, extra work, challenges, ETA, proof of work, client, and category
 - Team lead dashboard to filter updates by date or name
 - Weekly report generation using Gemini 2.5 Flash when `GEMINI_API_KEY` is configured
 - Editable report preview before confirmation
-- PDF download and saved report history in MongoDB
+- PDF download and saved report history in Mongo
+- CLI script to reset any user password by email
 
 ## Project Structure
 
@@ -23,6 +26,7 @@ A minimal FastAPI + MongoDB application for team members to submit daily plans a
 - `app/services/report_pdf.py`: PDF rendering
 - `app/templates/`: Bootstrap templates
 - `scripts/create_lead.py`: CLI for creating additional team lead accounts
+- `scripts/reset_password.py`: CLI for resetting any user password by email
 
 ## Setup
 
@@ -55,7 +59,15 @@ On first startup, the application seeds one team lead account from `.env`:
 Use this command to add more TL accounts:
 
 ```bash
-python scripts/create_lead.py --email tl2@example.com --first-name Priya --last-name Rao --password Priya123
+python scripts/create_lead.py --email tl2@example.com --first-name DemoTL --last-name DTL --password DTL
+```
+
+## Reset Any User Password by Email
+
+Use this command when you want to reset a team lead or team member password directly from the terminal:
+
+```bash
+python scripts/reset_password.py --email lead@example.com --new-password NewStrongPassword123
 ```
 
 ## Gemini Integration

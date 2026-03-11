@@ -7,6 +7,9 @@ from fastapi import HTTPException, Request, status
 from app.database import get_database
 
 
+FLASH_KEY = "flash_message"
+
+
 def parse_object_id(value: str) -> ObjectId:
     try:
         return ObjectId(value)
@@ -61,3 +64,30 @@ def object_id_str(document: dict[str, Any] | None) -> dict[str, Any] | None:
         if key in converted and isinstance(converted[key], ObjectId):
             converted[key] = str(converted[key])
     return converted
+
+
+def add_flash(request: Request, level: str, message: str) -> None:
+    request.session[FLASH_KEY] = {"level": level, "message": message}
+
+
+def pop_flash(request: Request) -> dict[str, str] | None:
+    return request.session.pop(FLASH_KEY, None)
+
+
+def is_valid_iso_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def validate_new_password(current_password: str, new_password: str, confirm_password: str) -> str | None:
+    cleaned_new = new_password.strip()
+    if new_password != confirm_password:
+        return "New password and confirmation do not match."
+    if len(cleaned_new) < 4:
+        return "New password must be at least 4 characters."
+    if cleaned_new == current_password.strip():
+        return "New password must be different from the current password."
+    return None

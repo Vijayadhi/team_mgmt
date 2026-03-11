@@ -5,13 +5,23 @@
     <div>
         <p class="eyebrow mb-1">Team lead console</p>
         <h1 class="h3 mb-1">{{ user.first_name }} {{ user.last_name }}</h1>
-        <p class="text-secondary mb-0">Manage team members, inspect updates, and prepare weekly reports.</p>
+        <p class="text-secondary mb-0">Manage team members, inspect updates, configure the team name, and prepare weekly reports.</p>
     </div>
 </div>
 
 <div class="row g-4 mb-4">
     <div class="col-lg-4">
-        <div class="card border-0 shadow-sm h-100">
+        <!-- <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Team Name</h2>
+                <form method="post" action="/admin/team-name" class="vstack gap-3">
+                    <input class="form-control" type="text" name="team_name" value="{{ user.team_name or 'Team Daily Tracker' }}" placeholder="Enter team name" required>
+                    <div class="small text-secondary">The navbar and browser title will show <strong>iamneo | team name</strong>.</div>
+                    <button class="btn btn-dark" type="submit">Update Team Name</button>
+                </form>
+            </div>
+        </div> -->
+        <div class="card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
                 <h2 class="h5 mb-3">Add Team Member</h2>
                 <form method="post" action="/admin/users" class="vstack gap-3">
@@ -20,6 +30,17 @@
                     <input class="form-control" type="email" name="email" placeholder="Email address" required>
                     <div class="small text-secondary">Default password will be the first name.</div>
                     <button class="btn btn-dark" type="submit">Create User</button>
+                </form>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Change Your Password</h2>
+                <form method="post" action="/admin/change-password" class="vstack gap-3">
+                    <input class="form-control" type="password" name="current_password" placeholder="Current password" required>
+                    <input class="form-control" type="password" name="new_password" placeholder="New password" required>
+                    <input class="form-control" type="password" name="confirm_password" placeholder="Confirm new password" required>
+                    <button class="btn btn-outline-dark" type="submit">Update Password</button>
                 </form>
             </div>
         </div>
@@ -118,6 +139,10 @@
                                 <th>Date</th>
                                 <th>Member</th>
                                 <th>Plan</th>
+                                <th>ETA</th>
+                                <th>Client</th>
+                                <th>Category</th>
+                                <th>Proof</th>
                                 <th>Extra Work</th>
                                 <th>Challenges</th>
                             </tr>
@@ -131,11 +156,20 @@
                                     <div class="small text-secondary">{{ item.email }}</div>
                                 </td>
                                 <td>{{ item.plan or '-' }}</td>
+                                <td>{{ item.eta or '-' }}</td>
+                                <td>{{ item.client_name or '-' }}</td>
+                                <td>
+                                    {% if item.is_corporate %}Corporate{% endif %}
+                                    {% if item.is_corporate and item.is_university %} / {% endif %}
+                                    {% if item.is_university %}University{% endif %}
+                                    {% if not item.is_corporate and not item.is_university %}-{% endif %}
+                                </td>
+                                <td>{{ item.proof_of_work or '-' }}</td>
                                 <td>{{ item.extra_work or '-' }}</td>
                                 <td>{{ item.challenges or '-' }}</td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="5" class="text-secondary">No updates found for the selected filter.</td></tr>
+                            <tr><td colspan="9" class="text-secondary">No updates found for the selected filter.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

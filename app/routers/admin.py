@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.database import get_database
 from app.dependencies import format_date, get_current_lead, object_id_str, parse_object_id
-from app.security import hash_password
+from app.security import hash_password, verify_password
 from app.services.ai_summary import group_updates_for_summary, summarize_weekly_updates
 from app.services.report_pdf import build_weekly_report_pdf
 
@@ -68,6 +68,47 @@ async def admin_dashboard(
             "week_end": (date.today() - timedelta(days=date.today().weekday()) + timedelta(days=4)).isoformat(),
         },
     )
+
+
+@router.post("/team-name")
+async def update_team_name(
+    request: Request,
+    current_user: dict = Depends(get_current_lead),
+    team_name: str = Form(...),
+):
+    cleaned_team_name = team_name.strip()
+    if not cleaned_team_name:
+        raise HTTPException(status_code=400, detail="Team name cannot be empty.")
+
+    db = get_database()
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"team_name": cleaned_team_name, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
+@router.post("/change-password")
+async def change_lead_password(
+    request: Request,
+    current_user: dict = Depends(get_current_lead),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    if not verify_password(current_password, current_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="New password and confirmation do not match.")
+    if len(new_password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="New password must be at least 4 characters.")
+
+    db = get_database()
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"password_hash": hash_password(new_password.strip())}},
+    )
+    return RedirectResponse("/admin/dashboard", status_code=303)
 
 
 @router.post("/users")

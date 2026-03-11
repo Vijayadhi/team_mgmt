@@ -12,6 +12,7 @@ async def main() -> None:
     parser.add_argument("--first-name", required=True)
     parser.add_argument("--last-name", default="")
     parser.add_argument("--password", required=True)
+    parser.add_argument("--team-name", default="Team Daily Tracker")
     args = parser.parse_args()
 
     await connect_to_mongo()
@@ -29,6 +30,7 @@ async def main() -> None:
             "email": args.email.lower().strip(),
             "password_hash": hash_password(args.password),
             "role": "lead",
+            "team_name": args.team_name.strip() or "Team Daily Tracker",
             "is_active": True,
             "created_at": datetime.now(timezone.utc),
         }

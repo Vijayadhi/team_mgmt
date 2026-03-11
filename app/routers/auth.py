@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.database import get_database
+from app.dependencies import add_flash, pop_flash
 from app.security import verify_password
 
 
@@ -14,7 +15,10 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/login")
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": None, "flash": pop_flash(request)},
+    )
 
 
 @router.post("/login")
@@ -24,12 +28,17 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
     if not user or not user.get("is_active", True) or not verify_password(password, user["password_hash"]):
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Invalid credentials or disabled account."},
+            {
+                "request": request,
+                "error": "Invalid credentials or disabled account.",
+                "flash": pop_flash(request),
+            },
             status_code=400,
         )
 
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login_at": datetime.now(timezone.utc)}})
     request.session["user_id"] = str(user["_id"])
+    add_flash(request, "success", "Login successful.")
     destination = "/admin/dashboard" if user["role"] == "lead" else "/member/dashboard"
     return RedirectResponse(destination, status_code=303)
 
@@ -37,4 +46,5 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
 @router.post("/logout")
 async def logout(request: Request):
     request.session.clear()
+    add_flash(request, "success", "You have been logged out.")
     return RedirectResponse("/login", status_code=303)
