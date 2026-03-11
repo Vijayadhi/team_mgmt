@@ -1,216 +1,356 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% set title = 'Admin Dashboard' %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
-    <div>
-        <p class="eyebrow mb-1">Team lead console</p>
-        <h1 class="h3 mb-1">{{ user.first_name }} {{ user.last_name }}</h1>
-        <p class="text-secondary mb-0">Manage team members, inspect updates, configure the team name, and prepare weekly reports.</p>
+<section class="dashboard-hero anchor-section" id="overview">
+    <div class="hero-row">
+        <div>
+            <div class="hero-kicker"><i class="fi fi-rr-briefcase"></i><span>Team Lead Console</span></div>
+            <h1 class="hero-title">{{ user.first_name }} {{ user.last_name }}</h1>
+            <p class="hero-subtitle">Track team execution, approve exceptions, monitor compliance, and publish weekly summaries from one structured dashboard.</p>
+        </div>
+        <div class="hero-meta">
+            <div class="meta-pill"><i class="fi fi-rr-users"></i><span>{{ user.team_name or 'Team Daily Tracker' }}</span></div>
+            <div class="meta-pill"><i class="fi fi-rr-envelope"></i><span>{{ user.email }}</span></div>
+        </div>
     </div>
+    <div class="dashboard-nav">
+        <a class="dashboard-chip" href="#members"><i class="fi fi-rr-users"></i><span>Members</span></a>
+        <a class="dashboard-chip" href="#approvals"><i class="fi fi-rr-check-circle"></i><span>Approvals</span></a>
+        <a class="dashboard-chip" href="#compliance"><i class="fi fi-rr-calendar-clock"></i><span>Missing Days</span></a>
+        <a class="dashboard-chip" href="#reports"><i class="fi fi-rr-chart-histogram"></i><span>Reports</span></a>
+        <a class="dashboard-chip" href="#settings-panel"><i class="fi fi-rr-settings"></i><span>Settings</span></a>
+    </div>
+</section>
+
+<div class="metrics-grid">
+    <article class="metric-card">
+        <span class="metric-icon navy"><i class="fi fi-rr-users-alt"></i></span>
+        <div>
+            <div class="metric-label">Team Members</div>
+            <div class="metric-value">{{ team_members|length }}</div>
+        </div>
+    </article>
+    <article class="metric-card">
+        <span class="metric-icon teal"><i class="fi fi-rr-check-circle"></i></span>
+        <div>
+            <div class="metric-label">Pending Approvals</div>
+            <div class="metric-value">{{ pending_requests|length }}</div>
+        </div>
+    </article>
+    <article class="metric-card">
+        <span class="metric-icon amber"><i class="fi fi-rr-calendar-clock"></i></span>
+        <div>
+            <div class="metric-label">Missing Day Flags</div>
+            <div class="metric-value">{{ missing_days|length }}</div>
+        </div>
+    </article>
+    <article class="metric-card">
+        <span class="metric-icon rose"><i class="fi fi-rr-chart-histogram"></i></span>
+        <div>
+            <div class="metric-label">Saved Reports</div>
+            <div class="metric-value">{{ reports|length }}</div>
+        </div>
+    </article>
 </div>
 
-<div class="row g-4 mb-4">
-    <div class="col-lg-4">
-        <!-- <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Team Name</h2>
-                <form method="post" action="/admin/team-name" class="vstack gap-3">
-                    <input class="form-control" type="text" name="team_name" value="{{ user.team_name or 'Team Daily Tracker' }}" placeholder="Enter team name" required>
-                    <div class="small text-secondary">The navbar and browser title will show <strong>iamneo | team name</strong>.</div>
-                    <button class="btn btn-dark" type="submit">Update Team Name</button>
-                </form>
-            </div>
-        </div> -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Add Team Member</h2>
-                <form method="post" action="/admin/users" class="vstack gap-3">
-                    <input class="form-control" type="text" name="first_name" placeholder="First name" required>
-                    <input class="form-control" type="text" name="last_name" placeholder="Last name">
-                    <input class="form-control" type="email" name="email" placeholder="Email address" required>
-                    <div class="small text-secondary">Default password will be the first name.</div>
-                    <button class="btn btn-dark" type="submit">Create User</button>
-                </form>
-            </div>
-        </div>
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Change Your Password</h2>
-                <form method="post" action="/admin/change-password" class="vstack gap-3">
-                    <input class="form-control" type="password" name="current_password" placeholder="Current password" required>
-                    <input class="form-control" type="password" name="new_password" placeholder="New password" required>
-                    <input class="form-control" type="password" name="confirm_password" placeholder="Confirm new password" required>
-                    <button class="btn btn-outline-dark" type="submit">Update Password</button>
-                </form>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="h5 mb-0">Team Members</h2>
-                    <span class="badge text-bg-light">{{ team_members|length }} members</span>
+<div class="dashboard-grid">
+    <div class="stack">
+        <section class="panel anchor-section" id="members">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-users"></i></span>
+                    <div>
+                        <h2 class="panel-title">Team Members</h2>
+                        <p class="panel-note">Each member card expands independently, so the list stays compact and readable.</p>
+                    </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="table align-middle">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Status</th>
-                                <th class="text-end">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for member in team_members %}
-                            <tr>
-                                <td>{{ member.first_name }} {{ member.last_name }}</td>
-                                <td>{{ member.email }}</td>
-                                <td>
-                                    {% if member.is_active %}
-                                    <span class="badge text-bg-success">Active</span>
-                                    {% else %}
-                                    <span class="badge text-bg-secondary">Disabled</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    <div class="d-flex justify-content-end gap-2">
-                                        <form method="post" action="/admin/users/{{ member.id }}/reset-password">
-                                            <button class="btn btn-sm btn-outline-dark" type="submit">Reset Password</button>
-                                        </form>
-                                        <form method="post" action="/admin/users/{{ member.id }}/toggle">
-                                            <button class="btn btn-sm btn-outline-danger" type="submit">{{ 'Disable' if member.is_active else 'Enable' }}</button>
-                                        </form>
+                <span class="panel-tag">{{ team_members|length }} total</span>
+            </div>
+            <div class="scroll-card">
+                <div class="scroll-body">
+                    <div class="member-grid">
+                        {% for member in team_members %}
+                        <div class="member-card">
+                            <details>
+                                <summary class="member-summary">
+                                    <div class="d-flex gap-3 align-items-start min-w-0">
+                                        <div class="member-avatar">{{ member.first_name[:1] }}{{ member.last_name[:1] if member.last_name else '' }}</div>
+                                        <div class="min-w-0">
+                                            <div class="fw-semibold">{{ member.first_name }} {{ member.last_name }}</div>
+                                            <div class="inline-stat text-break-soft">{{ member.email }}</div>
+                                        </div>
                                     </div>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="4" class="text-secondary">No team members added yet.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    {% if member.is_active %}
+                                    <span class="status-pill status-active">Active</span>
+                                    {% else %}
+                                    <span class="status-pill status-danger">Disabled</span>
+                                    {% endif %}
+                                </summary>
+                                <div class="action-row">
+                                    <form method="post" action="/admin/users/{{ member.id }}/reset-password">
+                                        <button class="btn btn-outline-secondary btn-sm" type="submit">Reset Password</button>
+                                    </form>
+                                    <form method="post" action="/admin/users/{{ member.id }}/toggle">
+                                        <button class="btn btn-dark btn-sm" type="submit">{{ 'Disable' if member.is_active else 'Enable' }}</button>
+                                    </form>
+                                </div>
+                            </details>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">No team members added yet.</div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
+        </section>
 
-<div class="row g-4 mb-4">
-    <div class="col-lg-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Generate Weekly Report</h2>
-                <form method="post" action="/admin/reports/generate" class="vstack gap-3">
+        <section class="panel anchor-section" id="approvals">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-check-circle"></i></span>
                     <div>
-                        <label class="form-label">Week Start</label>
-                        <input class="form-control" type="date" name="week_start" value="{{ week_start }}" required>
+                        <h2 class="panel-title">Pending Approvals</h2>
+                        <p class="panel-note">Late submissions and missed-day requests that need your decision.</p>
                     </div>
-                    <div>
-                        <label class="form-label">Week End</label>
-                        <input class="form-control" type="date" name="week_end" value="{{ week_end }}" required>
-                    </div>
-                    <button class="btn btn-dark" type="submit">Generate Summary</button>
-                </form>
+                </div>
+                <span class="panel-tag">{{ pending_requests|length }} pending</span>
             </div>
-        </div>
-    </div>
-    <div class="col-lg-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
-                    <h2 class="h5 mb-0">Filter Daily Updates</h2>
-                    <form method="get" action="/admin/dashboard" class="row g-2">
-                        <div class="col-auto">
-                            <input class="form-control" type="text" name="member_name" value="{{ filters.member_name }}" placeholder="Name or email">
+            <div class="scroll-card table-shell">
+                <table class="table table-dashboard mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Type</th>
+                            <th>Reason</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in pending_requests %}
+                        <tr>
+                            <td>{{ item.date }}</td>
+                            <td>
+                                <div class="fw-semibold">{{ item.member_name }}</div>
+                                <div class="inline-stat text-break-soft">{{ item.email }}</div>
+                            </td>
+                            <td><span class="status-pill status-info">{{ item.request_type.replace('_', ' ')|title }}</span></td>
+                            <td class="text-break-soft">{{ item.reason }}</td>
+                            <td class="text-end">
+                                <div class="action-row justify-content-end">
+                                    <form method="post" action="/admin/requests/{{ item.id }}/approve">
+                                        <button class="btn btn-dark btn-sm" type="submit">Approve</button>
+                                    </form>
+                                    <form method="post" action="/admin/requests/{{ item.id }}/reject">
+                                        <button class="btn btn-outline-secondary btn-sm" type="submit">Reject</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-state">No pending approvals.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel anchor-section" id="compliance">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-calendar-clock"></i></span>
+                    <div>
+                        <h2 class="panel-title">Missing Days</h2>
+                        <p class="panel-note">Recent compliance gaps with leave and warning actions for the lead.</p>
+                    </div>
+                </div>
+                <span class="panel-tag">{{ missing_days|length }} flagged</span>
+            </div>
+            <div class="scroll-card table-shell">
+                <table class="table table-dashboard mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Email</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in missing_days %}
+                        <tr>
+                            <td>{{ item.date }}</td>
+                            <td>{{ item.member_name }}</td>
+                            <td class="text-break-soft">{{ item.email }}</td>
+                            <td class="text-end">
+                                <div class="action-row justify-content-end">
+                                    <form method="post" action="/admin/missing-days/leave">
+                                        <input type="hidden" name="user_id" value="{{ item.member_id }}">
+                                        <input type="hidden" name="missing_date" value="{{ item.date }}">
+                                        <button class="btn btn-outline-secondary btn-sm" type="submit">Mark Leave</button>
+                                    </form>
+                                    <form method="post" action="/admin/missing-days/warning">
+                                        <input type="hidden" name="user_id" value="{{ item.member_id }}">
+                                        <input type="hidden" name="missing_date" value="{{ item.date }}">
+                                        <button class="btn btn-dark btn-sm" type="submit">Raise Warning</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-state">No missing-day issues in the recent workdays.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel anchor-section" id="reports">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-chart-histogram"></i></span>
+                    <div>
+                        <h2 class="panel-title">Reports</h2>
+                        <p class="panel-note">Generate weekly summaries, inspect daily updates, and reopen final reports.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-stack">
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-chart-line-up"></i><span>Generate Weekly Report</span></div>
+                    <form method="post" action="/admin/reports/generate" class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label">Week Start</label>
+                            <input class="form-control" type="date" name="week_start" value="{{ week_start }}" required>
                         </div>
-                        <div class="col-auto">
-                            <input class="form-control" type="date" name="update_date" value="{{ filters.update_date }}">
+                        <div class="col-md-5">
+                            <label class="form-label">Week End</label>
+                            <input class="form-control" type="date" name="week_end" value="{{ week_end }}" required>
                         </div>
-                        <div class="col-auto">
-                            <button class="btn btn-outline-dark" type="submit">Filter</button>
+                        <div class="col-md-2 d-grid align-self-end">
+                            <button class="btn btn-dark" type="submit">Generate</button>
                         </div>
                     </form>
                 </div>
-                <div class="table-responsive updates-table">
-                    <table class="table align-middle">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Member</th>
-                                <th>Plan</th>
-                                <th>ETA</th>
-                                <th>Client</th>
-                                <th>Category</th>
-                                <th>Proof</th>
-                                <th>Extra Work</th>
-                                <th>Challenges</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in updates %}
-                            <tr>
-                                <td>{{ item.date }}</td>
-                                <td>
-                                    <div>{{ item.member_name }}</div>
-                                    <div class="small text-secondary">{{ item.email }}</div>
-                                </td>
-                                <td>{{ item.plan or '-' }}</td>
-                                <td>{{ item.eta or '-' }}</td>
-                                <td>{{ item.client_name or '-' }}</td>
-                                <td>
-                                    {% if item.is_corporate %}Corporate{% endif %}
-                                    {% if item.is_corporate and item.is_university %} / {% endif %}
-                                    {% if item.is_university %}University{% endif %}
-                                    {% if not item.is_corporate and not item.is_university %}-{% endif %}
-                                </td>
-                                <td>{{ item.proof_of_work or '-' }}</td>
-                                <td>{{ item.extra_work or '-' }}</td>
-                                <td>{{ item.challenges or '-' }}</td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="9" class="text-secondary">No updates found for the selected filter.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-filter"></i><span>Daily Updates</span></div>
+                    <form method="get" action="/admin/dashboard" class="row g-3 mb-3">
+                        <div class="col-lg-5">
+                            <input class="form-control" type="text" name="member_name" value="{{ filters.member_name }}" placeholder="Filter by member name or email">
+                        </div>
+                        <div class="col-lg-4">
+                            <input class="form-control" type="date" name="update_date" value="{{ filters.update_date }}">
+                        </div>
+                        <div class="col-lg-3 d-grid">
+                            <button class="btn btn-outline-secondary" type="submit">Apply Filter</button>
+                        </div>
+                    </form>
+                    <div class="scroll-card table-shell">
+                        <table class="table table-dashboard mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Member</th>
+                                    <th>Plan</th>
+                                    <th>ETA</th>
+                                    <th>Client</th>
+                                    <th>Proof</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in updates %}
+                                <tr>
+                                    <td>{{ item.date }}</td>
+                                    <td>
+                                        <div class="fw-semibold">{{ item.member_name }}</div>
+                                        <div class="inline-stat text-break-soft">{{ item.email }}</div>
+                                    </td>
+                                    <td class="text-break-soft">{{ item.plan or '-' }}</td>
+                                    <td>{{ item.eta or '-' }}</td>
+                                    <td class="text-break-soft">{{ item.client_name or '-' }}</td>
+                                    <td class="text-break-soft">{{ item.proof_of_work or '-' }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="6" class="empty-state">No updates found for the selected filter.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-folder-open"></i><span>Saved Weekly Reports</span></div>
+                    <div class="scroll-card table-shell">
+                        <table class="table table-dashboard mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Week</th>
+                                    <th>Status</th>
+                                    <th>Generated</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in reports %}
+                                <tr>
+                                    <td>{{ report.week_start }} to {{ report.week_end }}</td>
+                                    <td><span class="status-pill status-info text-capitalize">{{ report.status }}</span></td>
+                                    <td>{{ report.generated_at|dateformat }}</td>
+                                    <td class="text-end">
+                                        <div class="action-row justify-content-end">
+                                            <a class="btn btn-outline-secondary btn-sm" href="/admin/reports/{{ report.id }}/preview">Open</a>
+                                            <a class="btn btn-dark btn-sm" href="/admin/reports/{{ report.id }}/download">Download PDF</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="4" class="empty-state">No finalized reports yet.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
     </div>
-</div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h5 mb-0">Saved Weekly Reports</h2>
-        </div>
-        <div class="table-responsive">
-            <table class="table align-middle">
-                <thead>
-                    <tr>
-                        <th>Week</th>
-                        <th>Status</th>
-                        <th>Generated</th>
-                        <th class="text-end">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for report in reports %}
-                    <tr>
-                        <td>{{ report.week_start }} to {{ report.week_end }}</td>
-                        <td><span class="badge text-bg-dark text-capitalize">{{ report.status }}</span></td>
-                        <td>{{ report.generated_at|dateformat }}</td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-dark" href="/admin/reports/{{ report.id }}/preview">Open</a>
-                            <a class="btn btn-sm btn-dark" href="/admin/reports/{{ report.id }}/download">Download PDF</a>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="4" class="text-secondary">No finalized reports yet.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+    <aside class="stack anchor-section" id="settings-panel">
+        <section class="sidebar-panel">
+            <div class="panel-kicker"><i class="fi fi-rr-settings"></i><span>Settings</span></div>
+            <h2 class="panel-title mb-1">Control Center</h2>
+            <p class="panel-note mb-4">Core team configuration and lead security controls.</p>
+            <div class="settings-stack">
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-id-badge"></i><span>Team Name</span></div>
+                    <form method="post" action="/admin/team-name" class="vstack gap-3">
+                        <input class="form-control" type="text" name="team_name" value="{{ user.team_name or 'Team Daily Tracker' }}" placeholder="Enter team name" required>
+                        <button class="btn btn-dark" type="submit">Update Team Name</button>
+                    </form>
+                </div>
+
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-user-add"></i><span>Add Team Member</span></div>
+                    <form method="post" action="/admin/users" class="vstack gap-3">
+                        <input class="form-control" type="text" name="first_name" placeholder="First name" required>
+                        <input class="form-control" type="text" name="last_name" placeholder="Last name">
+                        <input class="form-control" type="email" name="email" placeholder="Email address" required>
+                        <button class="btn btn-dark" type="submit">Create User</button>
+                    </form>
+                </div>
+
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-lock"></i><span>Password Reset</span></div>
+                    <form method="post" action="/admin/change-password" class="vstack gap-3">
+                        <input class="form-control" type="password" name="current_password" placeholder="Current password" required>
+                        <input class="form-control" type="password" name="new_password" placeholder="New password" required>
+                        <input class="form-control" type="password" name="confirm_password" placeholder="Confirm new password" required>
+                        <button class="btn btn-outline-secondary" type="submit">Update Password</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </aside>
 </div>
 {% endblock %}

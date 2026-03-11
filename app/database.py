@@ -35,3 +35,7 @@ async def ensure_indexes() -> None:
     await db.daily_updates.create_index([("user_id", 1), ("date", 1)], unique=True)
     await db.daily_updates.create_index([("lead_id", 1), ("date", -1)])
     await db.weekly_reports.create_index([("lead_id", 1), ("week_start", -1), ("week_end", -1)])
+    await db.update_requests.create_index([("lead_id", 1), ("status", 1), ("created_at", -1)])
+    await db.update_requests.create_index([("user_id", 1), ("date", 1), ("status", 1)])
+    await db.notification_logs.create_index([("type", 1), ("user_id", 1), ("target_date", 1)], unique=True)
+    await db.leave_days.create_index([("user_id", 1), ("date", 1)], unique=True)

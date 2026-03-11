@@ -7,13 +7,73 @@ from fastapi.templating import Jinja2Templates
 from app.database import get_database
 from app.dependencies import format_date, get_current_lead, object_id_str, parse_object_id
 from app.security import hash_password, verify_password
-from app.services.ai_summary import group_updates_for_summary, summarize_weekly_updates
+from app.services.ai_summary import derive_bottleneck_risk, group_updates_for_summary, summarize_weekly_updates
+from app.services.email_service import send_email
 from app.services.report_pdf import build_weekly_report_pdf
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["dateformat"] = format_date
+
+
+def normalize_report_rows(rows: list[dict]) -> list[dict]:
+    normalized = []
+    for row in rows:
+        normalized.append(
+            {
+                "member_name": str(row.get("member_name", "")).strip(),
+                "activity_summary": str(row.get("activity_summary", "")).strip(),
+                "extra_work_summary": str(row.get("extra_work_summary", "")).strip(),
+                "challenges_summary": str(row.get("challenges_summary", "")).strip(),
+                "manager_notes": str(row.get("manager_notes", "")).strip(),
+                "next_week_action_plan": str(row.get("next_week_action_plan", "")).strip(),
+            }
+        )
+    return normalized
+
+
+def workdays_back(count: int) -> list[str]:
+    days: list[str] = []
+    cursor = date.today() - timedelta(days=1)
+    while len(days) < count:
+        if cursor.weekday() < 5:
+            days.append(cursor.isoformat())
+        cursor -= timedelta(days=1)
+    return days
+
+
+async def build_missing_day_rows(lead_id) -> list[dict]:
+    db = get_database()
+    members = await db.users.find({"lead_id": lead_id, "role": "member", "is_active": True}).to_list(length=2000)
+    target_dates = workdays_back(7)
+    rows: list[dict] = []
+    for member in members:
+        for target_date in target_dates:
+            leave = await db.leave_days.find_one({"user_id": member["_id"], "date": target_date})
+            update = await db.daily_updates.find_one({"user_id": member["_id"], "date": target_date})
+            if not leave and not update:
+                rows.append(
+                    {
+                        "member_id": str(member["_id"]),
+                        "member_name": f"{member['first_name']} {member['last_name']}".strip(),
+                        "email": member["email"],
+                        "date": target_date,
+                    }
+                )
+    return rows
+
+
+async def build_pending_requests(lead_id) -> list[dict]:
+    db = get_database()
+    requests = []
+    async for item in db.update_requests.find({"lead_id": lead_id, "status": "pending"}).sort("created_at", -1):
+        user = await db.users.find_one({"_id": item["user_id"]})
+        row = object_id_str(item)
+        row["member_name"] = f"{user['first_name']} {user['last_name']}".strip() if user else "Unknown"
+        row["email"] = user["email"] if user else ""
+        requests.append(row)
+    return requests
 
 
 @router.get("/dashboard")
@@ -63,11 +123,115 @@ async def admin_dashboard(
             "team_members": users,
             "updates": updates,
             "reports": reports,
+            "pending_requests": await build_pending_requests(current_user["_id"]),
+            "missing_days": await build_missing_day_rows(current_user["_id"]),
             "filters": {"member_name": member_name, "update_date": update_date},
             "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
             "week_end": (date.today() - timedelta(days=date.today().weekday()) + timedelta(days=4)).isoformat(),
         },
     )
+
+
+@router.post("/requests/{request_id}/approve")
+async def approve_request(request: Request, request_id: str, current_user: dict = Depends(get_current_lead)):
+    db = get_database()
+    item = await db.update_requests.find_one({"_id": parse_object_id(request_id), "lead_id": current_user["_id"], "status": "pending"})
+    if not item:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    payload = item.get("payload", {})
+    if item["request_type"] == "late_eod":
+        await db.daily_updates.update_one(
+            {"user_id": item["user_id"], "date": item["date"]},
+            {"$set": {**payload, "updated_at": datetime.now(timezone.utc)}},
+        )
+    elif item["request_type"] == "missed_day":
+        await db.daily_updates.update_one(
+            {"user_id": item["user_id"], "date": item["date"]},
+            {
+                "$set": {
+                    "lead_id": current_user["_id"],
+                    "date": item["date"],
+                    **payload,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$setOnInsert": {"user_id": item["user_id"], "created_at": datetime.now(timezone.utc)},
+            },
+            upsert=True,
+        )
+    await db.update_requests.update_one(
+        {"_id": item["_id"]},
+        {"$set": {"status": "approved", "reviewed_at": datetime.now(timezone.utc), "reviewed_by": current_user["_id"]}},
+    )
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
+@router.post("/requests/{request_id}/reject")
+async def reject_request(request: Request, request_id: str, current_user: dict = Depends(get_current_lead)):
+    db = get_database()
+    result = await db.update_requests.update_one(
+        {"_id": parse_object_id(request_id), "lead_id": current_user["_id"], "status": "pending"},
+        {"$set": {"status": "rejected", "reviewed_at": datetime.now(timezone.utc), "reviewed_by": current_user["_id"]}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
+@router.post("/missing-days/leave")
+async def mark_leave(
+    request: Request,
+    current_user: dict = Depends(get_current_lead),
+    user_id: str = Form(...),
+    missing_date: str = Form(...),
+    reason: str = Form("Marked by TL"),
+):
+    db = get_database()
+    member = await db.users.find_one({"_id": parse_object_id(user_id), "lead_id": current_user["_id"], "role": "member"})
+    if not member:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.leave_days.update_one(
+        {"user_id": member["_id"], "date": missing_date},
+        {
+            "$set": {
+                "lead_id": current_user["_id"],
+                "reason": reason.strip() or "Marked by TL",
+                "marked_by": current_user["_id"],
+                "updated_at": datetime.now(timezone.utc),
+            },
+            "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
+        },
+        upsert=True,
+    )
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
+@router.post("/missing-days/warning")
+async def send_warning(
+    request: Request,
+    current_user: dict = Depends(get_current_lead),
+    user_id: str = Form(...),
+    missing_date: str = Form(...),
+):
+    db = get_database()
+    member = await db.users.find_one({"_id": parse_object_id(user_id), "lead_id": current_user["_id"], "role": "member"})
+    if not member:
+        raise HTTPException(status_code=404, detail="User not found")
+    await send_email(
+        subject=f"Warning: missing daily update for {missing_date}",
+        recipients=[member["email"]],
+        body=(
+            f"Hello {member['first_name']},\n\n"
+            f"Your daily entry for {missing_date} is missing. Please submit the required request with a valid reason.\n\n"
+            f"Team Lead: {current_user['first_name']} {current_user['last_name']}"
+        ),
+    )
+    await db.notification_logs.update_one(
+        {"type": "warning_mail", "user_id": member["_id"], "target_date": missing_date},
+        {"$setOnInsert": {"lead_id": current_user["_id"], "sent_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return RedirectResponse("/admin/dashboard", status_code=303)
 
 
 @router.post("/team-name")
@@ -160,7 +324,7 @@ async def reset_user_password(request: Request, user_id: str, current_user: dict
         raise HTTPException(status_code=404, detail="User not found")
     await db.users.update_one(
         {"_id": member["_id"]},
-        {"$set": {"password_hash": hash_password(member["first_name"])}} ,
+        {"$set": {"password_hash": hash_password(member["first_name"])}},
     )
     return RedirectResponse("/admin/dashboard", status_code=303)
 
@@ -179,13 +343,16 @@ async def generate_report(
     ).to_list(length=5000)
     members_payload = group_updates_for_summary(updates, users)
     summary = await summarize_weekly_updates(members_payload)
+    normalized_rows = normalize_report_rows(summary.get("rows", []))
+    bottleneck_risk = summary.get("bottleneck_risk") or derive_bottleneck_risk(summary.get("overall_challenges", ""))
     report = {
         "lead_id": current_user["_id"],
         "week_start": week_start,
         "week_end": week_end,
         "team_summary": summary.get("team_summary", ""),
         "overall_challenges": summary.get("overall_challenges", ""),
-        "rows": summary.get("rows", []),
+        "bottleneck_risk": bottleneck_risk,
+        "rows": normalized_rows,
         "status": "draft",
         "generated_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
@@ -200,6 +367,8 @@ async def preview_report(request: Request, report_id: str, current_user: dict = 
     report = await db.weekly_reports.find_one({"_id": parse_object_id(report_id), "lead_id": current_user["_id"]})
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    report["rows"] = normalize_report_rows(report.get("rows", []))
+    report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
     return templates.TemplateResponse(
         "admin/report_preview.html",
         {"request": request, "user": object_id_str(current_user), "report": object_id_str(report)},
@@ -228,16 +397,21 @@ async def save_report(
                 "extra_work_summary": str(form.get(f"extra_work_summary_{index}", "")).strip(),
                 "challenges_summary": str(form.get(f"challenges_summary_{index}", "")).strip(),
                 "manager_notes": str(form.get(f"manager_notes_{index}", "")).strip(),
+                "next_week_action_plan": str(form.get(f"next_week_action_plan_{index}", "")).strip(),
             }
         )
+
+    overall_challenges = str(form.get("overall_challenges", "")).strip()
+    bottleneck_risk = str(form.get("bottleneck_risk", "")).strip() or derive_bottleneck_risk(overall_challenges)
 
     await db.weekly_reports.update_one(
         {"_id": report["_id"]},
         {
             "$set": {
                 "team_summary": str(form.get("team_summary", "")).strip(),
-                "overall_challenges": str(form.get("overall_challenges", "")).strip(),
-                "rows": rows,
+                "overall_challenges": overall_challenges,
+                "bottleneck_risk": bottleneck_risk,
+                "rows": normalize_report_rows(rows),
                 "status": "final",
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -252,6 +426,8 @@ async def download_report(report_id: str, current_user: dict = Depends(get_curre
     report = await db.weekly_reports.find_one({"_id": parse_object_id(report_id), "lead_id": current_user["_id"]})
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    report["rows"] = normalize_report_rows(report.get("rows", []))
+    report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
     lead_name = f"{current_user['first_name']} {current_user['last_name']}".strip()
     pdf_bytes = build_weekly_report_pdf(object_id_str(report), lead_name)
     filename = f"weekly-report-{report['week_start']}-to-{report['week_end']}.pdf"

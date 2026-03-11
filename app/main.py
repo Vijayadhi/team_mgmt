@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -12,6 +13,7 @@ from app.database import close_mongo_connection, connect_to_mongo, get_database
 from app.dependencies import format_date, parse_object_id
 from app.routers import admin, auth, member
 from app.security import hash_password
+from app.services.automation import automation_loop
 
 
 def build_brand_name(team_name: str | None) -> str:
@@ -23,8 +25,14 @@ def build_brand_name(team_name: str | None) -> str:
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
     await ensure_default_admin()
-    yield
-    await close_mongo_connection()
+    stop_event = asyncio.Event()
+    automation_task = asyncio.create_task(automation_loop(stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        automation_task.cancel()
+        await close_mongo_connection()
 
 
 async def ensure_default_admin() -> None:

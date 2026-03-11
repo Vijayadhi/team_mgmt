@@ -1,124 +1,226 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% set title = 'Member Dashboard' %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <div>
-        <p class="eyebrow mb-1">Member workspace</p>
-        <h1 class="h3 mb-1">{{ user.first_name }} {{ user.last_name }}</h1>
-        <p class="text-secondary mb-0">Create a fresh daily entry by default, or use Edit on a previous task to prefill and update it.</p>
+<section class="dashboard-hero anchor-section" id="workspace">
+    <div class="hero-row">
+        <div>
+            <div class="hero-kicker"><i class="fi fi-rr-edit"></i><span>Member Workspace</span></div>
+            <h1 class="hero-title">{{ user.first_name }} {{ user.last_name }}</h1>
+            <p class="hero-subtitle">Submit your day cleanly in two stages: morning planning first, then end-of-day completion with proof and exceptions only when needed.</p>
+        </div>
+        <div class="hero-meta">
+            <div class="meta-pill"><i class="fi fi-rr-calendar-day"></i><span>{{ form_data.date }}</span></div>
+            <div class="meta-pill"><i class="fi fi-rr-document"></i><span>{% if is_requesting_missing_day %}Missed Day Request{% elif is_editing %}End of Day Update{% else %}Morning Entry{% endif %}</span></div>
+        </div>
     </div>
-    {% if is_editing %}
-    <a class="btn btn-outline-dark" href="/member/dashboard">New Empty Form</a>
-    {% endif %}
+    <div class="dashboard-nav">
+        <a class="dashboard-chip" href="#workspace"><i class="fi fi-rr-edit"></i><span>Workspace</span></a>
+        <a class="dashboard-chip" href="#history"><i class="fi fi-rr-time-past"></i><span>History</span></a>
+        <a class="dashboard-chip" href="#requests"><i class="fi fi-rr-document-signed"></i><span>Requests</span></a>
+        <a class="dashboard-chip" href="#settings-panel"><i class="fi fi-rr-settings"></i><span>Settings</span></a>
+    </div>
+</section>
+
+<div class="metrics-grid">
+    <article class="metric-card">
+        <span class="metric-icon navy"><i class="fi fi-rr-apps"></i></span>
+        <div>
+            <div class="metric-label">Current Mode</div>
+            <div class="metric-value">{% if is_requesting_missing_day %}Request{% elif is_editing %}EOD{% else %}AM{% endif %}</div>
+        </div>
+    </article>
+    <article class="metric-card">
+        <span class="metric-icon amber"><i class="fi fi-rr-paper-plane"></i></span>
+        <div>
+            <div class="metric-label">Pending Requests</div>
+            <div class="metric-value">{{ pending_requests|length }}</div>
+        </div>
+    </article>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="h5 mb-0">{{ 'Edit Task' if is_editing else 'Daily Update' }}</h2>
-                    <span class="badge text-bg-light">{{ form_data.date }}</span>
-                </div>
-                <form method="post" action="/member/daily-update" class="vstack gap-3">
+<div class="dashboard-grid">
+    <div class="stack">
+        <section class="panel anchor-section" id="workspace-panel">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-edit"></i></span>
                     <div>
+                        <h2 class="panel-title">{% if is_requesting_missing_day %}Missed Day Request{% elif is_editing %}End of Day Update{% else %}Morning Entry{% endif %}</h2>
+                        <p class="panel-note">The form only shows the fields required for the current step, so daily entry stays focused and fast.</p>
+                    </div>
+                </div>
+                <span class="panel-tag">{{ form_data.date }}</span>
+            </div>
+
+            {% if is_editing %}
+            <div class="compact-summary">
+                <div><strong>Morning Plan:</strong> {{ form_data.plan }}</div>
+                <div><strong>ETA:</strong> {{ form_data.eta }}</div>
+                <div><strong>Client:</strong> {{ form_data.client_name }}</div>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/member/daily-update" class="vstack gap-3">
+                {% if not is_editing %}
+                <div class="row g-3">
+                    <div class="col-md-4">
                         <label class="form-label">Date</label>
                         <input class="form-control" type="date" name="entry_date" value="{{ form_data.date if form_data else today }}" required>
                     </div>
-                    <div>
-                        <label class="form-label">Morning Plan</label>
-                        <textarea class="form-control" name="plan" rows="4" placeholder="Planned tasks for the day">{{ form_data.plan }}</textarea>
+                    <div class="col-md-4">
+                        <label class="form-label">ETA</label>
+                        <input class="form-control" type="text" name="eta" value="{{ form_data.eta }}" placeholder="EOD / 2 hrs / 6:30 PM" required>
                     </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">ETA</label>
-                            <input class="form-control" type="text" name="eta" value="{{ form_data.eta }}" placeholder="EOD / 2 hrs / 6:30 PM">
+                    <div class="col-md-4">
+                        <label class="form-label">Client</label>
+                        <input class="form-control" type="text" name="client_name" value="{{ form_data.client_name }}" placeholder="Client or stakeholder name" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Morning Plan</label>
+                    <textarea class="form-control" name="plan" rows="5" placeholder="Planned tasks for the day" required>{{ form_data.plan }}</textarea>
+                </div>
+                <div>
+                    <label class="form-label d-block">Category</label>
+                    <div class="d-flex gap-4 flex-wrap pt-1">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_corporate" id="is_corporate" {% if form_data.is_corporate %}checked{% endif %}>
+                            <label class="form-check-label" for="is_corporate">Corporate</label>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Client</label>
-                            <input class="form-control" type="text" name="client_name" value="{{ form_data.client_name }}" placeholder="Client or stakeholder name">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="form-label">Completed Work</label>
-                        <textarea class="form-control" name="completed_work" rows="3" placeholder="What you completed from the plan">{{ form_data.completed_work }}</textarea>
-                    </div>
-                    <div>
-                        <label class="form-label">Extra Work</label>
-                        <textarea class="form-control" name="extra_work" rows="3" placeholder="New or additional tasks done">{{ form_data.extra_work }}</textarea>
-                    </div>
-                    <div>
-                        <label class="form-label">Challenges</label>
-                        <textarea class="form-control" name="challenges" rows="3" placeholder="Blockers or issues faced">{{ form_data.challenges }}</textarea>
-                    </div>
-                    <div>
-                        <label class="form-label">Proof of Work</label>
-                        <textarea class="form-control" name="proof_of_work" rows="3" placeholder="PR link, ticket ID, document, screenshot link, demo note">{{ form_data.proof_of_work }}</textarea>
-                    </div>
-                    <div>
-                        <label class="form-label d-block">Category</label>
-                        <div class="d-flex gap-4 flex-wrap pt-1">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_corporate" id="is_corporate" {% if form_data.is_corporate %}checked{% endif %}>
-                                <label class="form-check-label" for="is_corporate">Corporate</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_university" id="is_university" {% if form_data.is_university %}checked{% endif %}>
-                                <label class="form-check-label" for="is_university">University</label>
-                            </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_university" id="is_university" {% if form_data.is_university %}checked{% endif %}>
+                            <label class="form-check-label" for="is_university">University</label>
                         </div>
                     </div>
-                    <button class="btn btn-dark" type="submit">{{ 'Update Task' if is_editing else 'Save Task' }}</button>
-                </form>
+                </div>
+                {% else %}
+                <input type="hidden" name="entry_date" value="{{ form_data.date }}">
+                {% endif %}
+
+                {% if is_editing or is_requesting_missing_day %}
+                <div>
+                    <label class="form-label">Extra Work</label>
+                    <textarea class="form-control" name="extra_work" rows="4" placeholder="New or additional work completed">{{ form_data.extra_work }}</textarea>
+                </div>
+                <div>
+                    <label class="form-label">Challenges</label>
+                    <textarea class="form-control" name="challenges" rows="4" placeholder="Blockers or issues faced">{{ form_data.challenges }}</textarea>
+                </div>
+                <div>
+                    <label class="form-label">Proof of Work <span class="text-danger">*</span></label>
+                    <textarea class="form-control" name="proof_of_work" rows="4" placeholder="PR link, ticket ID, document, screenshot link, demo note" required>{{ form_data.proof_of_work }}</textarea>
+                </div>
+                {% endif %}
+
+                {% if is_requesting_missing_day or (is_editing and form_data.date < today) %}
+                <div>
+                    <label class="form-label">Reason for Late Submission <span class="text-danger">*</span></label>
+                    <textarea class="form-control" name="request_reason" rows="4" placeholder="Explain why this update is being submitted late" required>{{ form_data.request_reason }}</textarea>
+                </div>
+                {% endif %}
+
+                <div class="action-row">
+                    <button class="btn btn-dark" type="submit">{% if is_requesting_missing_day %}Submit Approval Request{% elif is_editing and form_data.date < today %}Submit Late EOD Request{% elif is_editing %}Update End of Day Details{% else %}Save Morning Entry{% endif %}</button>
+                    {% if is_editing or is_requesting_missing_day %}
+                    <a class="btn btn-outline-secondary" href="/member/dashboard">Back to New Entry</a>
+                    {% endif %}
+                </div>
+            </form>
+        </section>
+
+        <section class="panel anchor-section" id="history">
+            <div class="panel-head">
+                <div class="panel-title-wrap">
+                    <span class="section-icon"><i class="fi fi-rr-time-past"></i></span>
+                    <div>
+                        <h2 class="panel-title">Recent Entries</h2>
+                        <p class="panel-note">Open individual days without stretching the page vertically.</p>
+                    </div>
+                </div>
             </div>
-        </div>
+            <div class="scroll-card">
+                <div class="scroll-body">
+                    <div class="member-grid">
+                        {% for item in recent_updates %}
+                        <div class="member-card">
+                            <details>
+                                <summary class="member-summary">
+                                    <div>
+                                        <div class="fw-semibold">{{ item.date }}</div>
+                                        <div class="inline-stat">ETA: {{ item.eta or '-' }}</div>
+                                    </div>
+                                    <span class="status-pill status-muted">Expand</span>
+                                </summary>
+                                <div class="info-stack mt-3">
+                                    <div><strong>Plan:</strong> {{ item.plan or '-' }}</div>
+                                    <div><strong>Extra:</strong> {{ item.extra_work or '-' }}</div>
+                                    <div><strong>Challenges:</strong> {{ item.challenges or '-' }}</div>
+                                    <div><strong>Proof:</strong> {{ item.proof_of_work or '-' }}</div>
+                                    <div>
+                                        <a class="btn btn-outline-secondary btn-sm" href="/member/dashboard?edit_date={{ item.date }}">Open Edit Mode</a>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">No entries yet.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
-    <div class="col-lg-4">
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Change Password</h2>
+
+    <aside class="stack">
+        <section class="sidebar-panel anchor-section" id="requests">
+            <div class="panel-kicker"><i class="fi fi-rr-document-signed"></i><span>Request Center</span></div>
+            <h2 class="panel-title mb-1">Missed Day Support</h2>
+            <p class="panel-note mb-4">Open a previous day request and track items that are still waiting for team lead approval.</p>
+            <div class="settings-stack">
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-calendar-day"></i><span>Missed Previous Day</span></div>
+                    <form method="get" action="/member/dashboard" class="vstack gap-3">
+                        <input class="form-control" type="date" name="request_date" max="{{ today }}" required>
+                        <button class="btn btn-dark" type="submit">Open Request</button>
+                    </form>
+                </div>
+                <div class="subpanel">
+                    <div class="subpanel-title"><i class="fi fi-rr-hourglass-end"></i><span>Pending Requests</span></div>
+                    <div class="scroll-card">
+                        <div class="scroll-body">
+                            {% if pending_requests %}
+                            <div class="info-stack">
+                                {% for item in pending_requests %}
+                                <div class="member-card">
+                                    <div class="fw-semibold">{{ item.date }}</div>
+                                    <div class="inline-stat">{{ item.request_type.replace('_', ' ')|title }}</div>
+                                    <div class="inline-stat">Awaiting TL approval</div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="empty-state">No pending requests.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="sidebar-panel anchor-section" id="settings-panel">
+            <div class="panel-kicker"><i class="fi fi-rr-settings"></i><span>Settings</span></div>
+            <h2 class="panel-title mb-1">Security</h2>
+            <p class="panel-note mb-4">Update your password without leaving the workspace.</p>
+            <div class="subpanel">
+                <div class="subpanel-title"><i class="fi fi-rr-lock"></i><span>Password Reset</span></div>
                 <form method="post" action="/member/change-password" class="vstack gap-3">
                     <input class="form-control" type="password" name="current_password" placeholder="Current password" required>
                     <input class="form-control" type="password" name="new_password" placeholder="New password" required>
                     <input class="form-control" type="password" name="confirm_password" placeholder="Confirm new password" required>
-                    <button class="btn btn-outline-dark" type="submit">Update Password</button>
+                    <button class="btn btn-outline-secondary" type="submit">Update Password</button>
                 </form>
             </div>
-        </div>
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4">
-                <h2 class="h5 mb-3">Recent Entries</h2>
-                {% if recent_updates %}
-                <div class="vstack gap-3">
-                    {% for item in recent_updates %}
-                    <div class="history-card">
-                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                            <div>
-                                <strong>{{ item.date }}</strong>
-                                <div class="small text-secondary">ETA: {{ item.eta or '-' }}</div>
-                            </div>
-                            <a class="btn btn-sm btn-outline-dark" href="/member/dashboard?edit_date={{ item.date }}">Edit</a>
-                        </div>
-                        <div class="small text-secondary"><strong>Plan:</strong> {{ item.plan or '-' }}</div>
-                        <div class="small text-secondary"><strong>Completed:</strong> {{ item.completed_work or '-' }}</div>
-                        <div class="small text-secondary"><strong>Extra:</strong> {{ item.extra_work or '-' }}</div>
-                        <div class="small text-secondary"><strong>Challenges:</strong> {{ item.challenges or '-' }}</div>
-                        <div class="small text-secondary"><strong>Client:</strong> {{ item.client_name or '-' }}</div>
-                        <div class="small text-secondary"><strong>Proof:</strong> {{ item.proof_of_work or '-' }}</div>
-                        <div class="small text-secondary"><strong>Category:</strong>
-                            {% if item.is_corporate %}Corporate{% endif %}
-                            {% if item.is_corporate and item.is_university %} / {% endif %}
-                            {% if item.is_university %}University{% endif %}
-                            {% if not item.is_corporate and not item.is_university %}-{% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="text-secondary mb-0">No entries yet.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
+        </section>
+    </aside>
 </div>
 {% endblock %}

@@ -17,6 +17,10 @@ def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
         Spacer(1, 12),
         Paragraph(report.get("team_summary", ""), styles["BodyText"]),
         Spacer(1, 12),
+        Paragraph(f"Overall challenges: {report.get('overall_challenges', '')}", styles["BodyText"]),
+        Spacer(1, 8),
+        Paragraph(f"Bottleneck risk: {report.get('bottleneck_risk', '')}", styles["BodyText"]),
+        Spacer(1, 12),
     ]
 
     table_data = [[
@@ -25,6 +29,7 @@ def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
         "Extra Work",
         "Challenges",
         "Manager Notes",
+        "Next Week Action Plan",
     ]]
     for row in report.get("rows", []):
         table_data.append(
@@ -34,10 +39,11 @@ def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
                 Paragraph(row.get("extra_work_summary", ""), styles["BodyText"]),
                 Paragraph(row.get("challenges_summary", ""), styles["BodyText"]),
                 Paragraph(row.get("manager_notes", ""), styles["BodyText"]),
+                Paragraph(row.get("next_week_action_plan", ""), styles["BodyText"]),
             ]
         )
 
-    table = Table(table_data, repeatRows=1, colWidths=[110, 210, 160, 160, 150])
+    table = Table(table_data, repeatRows=1, colWidths=[90, 170, 120, 120, 110, 150])
     table.setStyle(
         TableStyle(
             [
@@ -50,6 +56,6 @@ def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
             ]
         )
     )
-    story.extend([table, Spacer(1, 12), Paragraph(f"Overall challenges: {report.get('overall_challenges', '')}", styles["BodyText"])])
+    story.append(table)
     document.build(story)
     return buffer.getvalue()

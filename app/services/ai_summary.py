@@ -5,6 +5,21 @@ from typing import Any
 from app.config import get_settings
 
 
+def derive_bottleneck_risk(overall_challenges: str) -> str:
+    challenge_text = (overall_challenges or "").strip()
+    if not challenge_text or challenge_text.lower() == "no major blockers reported.":
+        return "Low risk. No major bottlenecks were reported for the selected week."
+
+    lowered = challenge_text.lower()
+    if any(keyword in lowered for keyword in ["blocked", "dependency", "waiting", "delay", "pending", "approval"]):
+        return "High risk. External dependencies or pending approvals may delay delivery next week."
+    if any(keyword in lowered for keyword in ["bug", "issue", "error", "failure", "rework"]):
+        return "Medium risk. Technical issues and rework may reduce execution speed if they continue."
+    if any(keyword in lowered for keyword in ["client", "clarification", "requirement", "scope"]):
+        return "Medium risk. Requirement ambiguity may affect prioritization and delivery confidence."
+    return "Medium risk. Reported challenges should be monitored to avoid spillover into the next sprint."
+
+
 def _fallback_summary(members: list[dict[str, Any]]) -> dict[str, Any]:
     rows = []
     overall_notes = []
@@ -17,7 +32,14 @@ def _fallback_summary(members: list[dict[str, Any]]) -> dict[str, Any]:
         client_text = ", ".join(sorted({item["client_name"] for item in entries if item.get("client_name")}))
         eta_text = ", ".join(item["eta"] for item in entries if item.get("eta"))
         proof_text = " | ".join(item["proof_of_work"] for item in entries if item.get("proof_of_work"))
-        activity_parts = [part for part in [completed or plan_text, f"Client: {client_text}" if client_text else "", f"ETA: {eta_text}" if eta_text else "", f"Proof: {proof_text}" if proof_text else ""] if part]
+        activity_parts = [
+            part for part in [
+                completed or plan_text,
+                f"Client: {client_text}" if client_text else "",
+                f"ETA: {eta_text}" if eta_text else "",
+                f"Proof: {proof_text}" if proof_text else "",
+            ] if part
+        ]
         rows.append(
             {
                 "member_name": member["member_name"],
@@ -25,14 +47,18 @@ def _fallback_summary(members: list[dict[str, Any]]) -> dict[str, Any]:
                 "extra_work_summary": extra_text or "No extra work logged",
                 "challenges_summary": challenges or "No challenges logged",
                 "manager_notes": "",
+                "next_week_action_plan": "",
             }
         )
         if challenges:
             overall_notes.append(f"{member['member_name']}: {challenges}")
+
+    overall_challenges = "; ".join(overall_notes) or "No major blockers reported."
     return {
         "team_summary": "Fallback summary generated locally because Gemini was unavailable.",
         "rows": rows,
-        "overall_challenges": "; ".join(overall_notes) or "No major blockers reported.",
+        "overall_challenges": overall_challenges,
+        "bottleneck_risk": derive_bottleneck_risk(overall_challenges),
     }
 
 
@@ -49,9 +75,10 @@ async def summarize_weekly_updates(members: list[dict[str, Any]]) -> dict[str, A
     prompt = {
         "task": (
             "Summarize a team's weekly update data. "
-            "Return strict JSON with keys: team_summary, overall_challenges, rows. "
+            "Return strict JSON with keys: team_summary, overall_challenges, bottleneck_risk, rows. "
             "rows must be an array of objects with member_name, activity_summary, "
-            "extra_work_summary, challenges_summary, manager_notes. "
+            "extra_work_summary, challenges_summary, manager_notes, next_week_action_plan. "
+            "Set next_week_action_plan to an empty string because the lead will fill it manually. "
             "Include ETA, proof of work, client context, and whether work was corporate or university where relevant. "
             "Keep each cell concise and professional."
         ),
@@ -68,6 +95,9 @@ async def summarize_weekly_updates(members: list[dict[str, Any]]) -> dict[str, A
         parsed = json.loads(response.text)
         if "rows" not in parsed:
             raise ValueError("Missing rows in Gemini response")
+        parsed["bottleneck_risk"] = parsed.get("bottleneck_risk") or derive_bottleneck_risk(parsed.get("overall_challenges", ""))
+        for row in parsed.get("rows", []):
+            row.setdefault("next_week_action_plan", "")
         return parsed
     except Exception:
         return _fallback_summary(members)

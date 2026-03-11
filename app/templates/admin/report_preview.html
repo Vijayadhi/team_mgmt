@@ -5,7 +5,7 @@
     <div>
         <p class="eyebrow mb-1">Weekly report editor</p>
         <h1 class="h3 mb-1">{{ report.week_start }} to {{ report.week_end }}</h1>
-        <p class="text-secondary mb-0">Review the AI-generated summary, edit any cell, then confirm to save and download the PDF.</p>
+        <p class="text-secondary mb-0">Review the AI-generated summary, refine the bottleneck risk, add next-week action plans, then confirm and download the PDF.</p>
     </div>
     {% if report.status == 'final' %}
     <a class="btn btn-dark" href="/admin/reports/{{ report.id }}/download">Download PDF</a>
@@ -31,6 +31,7 @@
                             <th>Extra Work</th>
                             <th>Challenges</th>
                             <th>Manager Notes</th>
+                            <th>Next Week Action Plan</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -51,6 +52,9 @@
                             <td>
                                 <textarea class="form-control" name="manager_notes_{{ loop.index0 }}" rows="4">{{ row.manager_notes }}</textarea>
                             </td>
+                            <td>
+                                <textarea class="form-control" name="next_week_action_plan_{{ loop.index0 }}" rows="4" placeholder="Manual action plan for next week">{{ row.next_week_action_plan or '' }}</textarea>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -63,7 +67,9 @@
     <div class="card border-0 shadow-sm">
         <div class="card-body p-4">
             <label class="form-label">Overall Challenges</label>
-            <textarea class="form-control" name="overall_challenges" rows="3">{{ report.overall_challenges }}</textarea>
+            <textarea class="form-control mb-3" name="overall_challenges" rows="3">{{ report.overall_challenges }}</textarea>
+            <label class="form-label">Bottleneck Risk</label>
+            <textarea class="form-control" name="bottleneck_risk" rows="3">{{ report.bottleneck_risk or '' }}</textarea>
         </div>
     </div>
 
