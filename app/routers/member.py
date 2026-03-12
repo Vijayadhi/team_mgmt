@@ -35,44 +35,7 @@ async def member_dashboard(
     request_date: str = "",
     current_user: dict = Depends(get_current_member),
 ):
-    db = get_database()
-    today = date.today().isoformat()
-    form_data = _blank_form(today)
-    is_editing = False
-    is_requesting_missing_day = False
-
-    if edit_date:
-        edit_update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": edit_date})
-        if edit_update:
-            form_data = object_id_str(edit_update)
-            form_data["request_reason"] = ""
-            is_editing = True
-
-    elif request_date and request_date < today:
-        existing = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": request_date})
-        if not existing:
-            form_data = _blank_form(request_date)
-            is_requesting_missing_day = True
-
-    cursor = db.daily_updates.find({"user_id": current_user["_id"]}).sort("date", -1).limit(10)
-    recent_updates = [object_id_str(item) async for item in cursor]
-    pending_requests = []
-    async for item in db.update_requests.find({"user_id": current_user["_id"], "status": "pending"}).sort("created_at", -1):
-        pending_requests.append(object_id_str(item))
-
-    return templates.TemplateResponse(
-        "member/dashboard.html",
-        {
-            "request": request,
-            "user": object_id_str(current_user),
-            "today": today,
-            "form_data": form_data,
-            "is_editing": is_editing,
-            "is_requesting_missing_day": is_requesting_missing_day,
-            "recent_updates": recent_updates,
-            "pending_requests": pending_requests,
-        },
-    )
+    return templates.TemplateResponse("spa.html", {"request": request})
 
 
 @router.post("/daily-update")

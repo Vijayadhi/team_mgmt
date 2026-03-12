@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import close_mongo_connection, connect_to_mongo, get_database
 from app.dependencies import format_date, parse_object_id
-from app.routers import admin, auth, member
+from app.routers import admin, api, auth, member
 from app.security import hash_password
 from app.services.automation import automation_loop
 
@@ -71,6 +71,7 @@ templates.env.filters["dateformat"] = format_date
 app.include_router(auth.router)
 app.include_router(member.router)
 app.include_router(admin.router)
+app.include_router(api.router)
 
 
 @app.middleware("http")

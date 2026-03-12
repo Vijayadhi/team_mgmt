@@ -83,53 +83,7 @@ async def admin_dashboard(
     member_name: str = "",
     update_date: str = "",
 ):
-    db = get_database()
-    users_cursor = db.users.find({"lead_id": current_user["_id"], "role": "member"}).sort("first_name", 1)
-    users = [object_id_str(user) async for user in users_cursor]
-
-    update_query = {"lead_id": current_user["_id"]}
-    if update_date:
-        update_query["date"] = update_date
-    if member_name:
-        matched_users = await db.users.find(
-            {
-                "lead_id": current_user["_id"],
-                "role": "member",
-                "$or": [
-                    {"first_name": {"$regex": member_name, "$options": "i"}},
-                    {"last_name": {"$regex": member_name, "$options": "i"}},
-                    {"email": {"$regex": member_name, "$options": "i"}},
-                ],
-            }
-        ).to_list(length=100)
-        update_query["user_id"] = {"$in": [user["_id"] for user in matched_users] or []}
-
-    updates = []
-    async for update in db.daily_updates.find(update_query).sort("date", -1):
-        user = await db.users.find_one({"_id": update["user_id"]})
-        item = object_id_str(update)
-        item["member_name"] = f"{user['first_name']} {user['last_name']}".strip() if user else "Unknown"
-        item["email"] = user["email"] if user else ""
-        updates.append(item)
-
-    reports_cursor = db.weekly_reports.find({"lead_id": current_user["_id"], "status": "final"}).sort("generated_at", -1)
-    reports = [object_id_str(report) async for report in reports_cursor]
-
-    return templates.TemplateResponse(
-        "admin/dashboard.html",
-        {
-            "request": request,
-            "user": object_id_str(current_user),
-            "team_members": users,
-            "updates": updates,
-            "reports": reports,
-            "pending_requests": await build_pending_requests(current_user["_id"]),
-            "missing_days": await build_missing_day_rows(current_user["_id"]),
-            "filters": {"member_name": member_name, "update_date": update_date},
-            "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
-            "week_end": (date.today() - timedelta(days=date.today().weekday()) + timedelta(days=4)).isoformat(),
-        },
-    )
+    return templates.TemplateResponse("spa.html", {"request": request})
 
 
 @router.post("/requests/{request_id}/approve")
