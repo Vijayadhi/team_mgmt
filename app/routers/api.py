@@ -1,10 +1,16 @@
 ﻿from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.database import get_database
-from app.dependencies import object_id_str, parse_object_id, validate_new_password
+from app.dependencies import (
+    is_valid_iso_date,
+    object_id_str,
+    parse_object_id,
+    validate_new_password,
+)
 from app.security import hash_password, verify_password
 from app.services.ai_summary import derive_bottleneck_risk, group_updates_for_summary, summarize_weekly_updates
 from app.services.email_service import send_email
@@ -64,6 +70,170 @@ def recent_dates(count: int) -> list[str]:
     return [(start + timedelta(days=index)).isoformat() for index in range(count)]
 
 
+def full_name(user: dict[str, Any] | None) -> str:
+    if not user:
+        return "Unknown"
+    return f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user.get("email", "Unknown")
+
+
+def normalize_status(value: str, allowed: set[str], fallback: str) -> str:
+    cleaned = str(value or "").strip().lower().replace(" ", "_")
+    return cleaned if cleaned in allowed else fallback
+
+
+def iso_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def create_notification(
+    user_id,
+    title: str,
+    body: str,
+    kind: str,
+    link: str,
+    meta: dict[str, Any] | None = None,
+) -> None:
+    db = get_database()
+    await db.notifications.insert_one(
+        {
+            "user_id": user_id,
+            "title": title.strip(),
+            "body": body.strip(),
+            "kind": kind.strip(),
+            "link": link.strip(),
+            "meta": meta or {},
+            "is_read": False,
+            "created_at": iso_now(),
+        }
+    )
+
+
+def serialize_notification(item: dict[str, Any]) -> dict[str, Any]:
+    data = object_id_str(item) or {}
+    created_at = data.get("created_at")
+    if isinstance(created_at, datetime):
+        data["created_at"] = created_at.isoformat()
+    return data
+
+
+async def build_notifications(user_id, limit: int = 8) -> list[dict[str, Any]]:
+    db = get_database()
+    items = await db.notifications.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=limit)
+    return [serialize_notification(item) for item in items]
+
+
+async def get_member_missing_dates(user_id, days: int = 30) -> list[str]:
+    db = get_database()
+    rows: list[str] = []
+    target_dates = workdays_back(days)
+    for target_date in target_dates:
+        leave = await db.leave_days.find_one({"user_id": user_id, "date": target_date})
+        update = await db.daily_updates.find_one({"user_id": user_id, "date": target_date})
+        pending_request = await db.update_requests.find_one(
+            {"user_id": user_id, "date": target_date, "status": "pending"}
+        )
+        if not leave and not update and not pending_request:
+            rows.append(target_date)
+    return rows
+
+
+async def get_member_request_history(user_id) -> list[dict[str, Any]]:
+    db = get_database()
+    history: list[dict[str, Any]] = []
+    async for item in db.update_requests.find({"user_id": user_id}).sort("created_at", -1):
+        row = object_id_str(item) or {}
+        created_at = row.get("created_at")
+        reviewed_at = row.get("reviewed_at")
+        if isinstance(created_at, datetime):
+            row["created_at"] = created_at.isoformat()
+        if isinstance(reviewed_at, datetime):
+            row["reviewed_at"] = reviewed_at.isoformat()
+        history.append(row)
+    return history
+
+
+def serialize_todo(item: dict[str, Any]) -> dict[str, Any]:
+    data = object_id_str(item) or {}
+    for key in ("created_at", "updated_at", "completed_at"):
+        if isinstance(data.get(key), datetime):
+            data[key] = data[key].isoformat()
+    return data
+
+
+async def build_member_todos(
+    user_id,
+    deadline_from: str = "",
+    deadline_to: str = "",
+    status_value: str = "",
+) -> list[dict[str, Any]]:
+    db = get_database()
+    query: dict[str, Any] = {"user_id": user_id}
+    date_filter: dict[str, Any] = {}
+    if deadline_from:
+        date_filter["$gte"] = deadline_from
+    if deadline_to:
+        date_filter["$lte"] = deadline_to
+    if date_filter:
+        query["deadline"] = date_filter
+    if status_value:
+        query["status"] = normalize_status(status_value, {"pending", "in_progress", "completed"}, "pending")
+    rows = await db.member_todos.find(query).sort([("deadline", 1), ("created_at", -1)]).to_list(length=500)
+    return [serialize_todo(item) for item in rows]
+
+
+def serialize_task(item: dict[str, Any]) -> dict[str, Any]:
+    data = object_id_str(item) or {}
+    if isinstance(data.get("assignee_id"), ObjectId):
+        data["assignee_id"] = str(data["assignee_id"])
+    for key in ("created_at", "updated_at"):
+        if isinstance(data.get(key), datetime):
+            data[key] = data[key].isoformat()
+    activities = []
+    for activity in data.get("activities", []):
+        entry = dict(activity)
+        if isinstance(entry.get("created_at"), datetime):
+            entry["created_at"] = entry["created_at"].isoformat()
+        if isinstance(entry.get("sender_id"), ObjectId):
+            entry["sender_id"] = str(entry["sender_id"])
+        activities.append(entry)
+    data["activities"] = activities
+    return data
+
+
+async def build_assigned_tasks_for_user(user: dict[str, Any]) -> list[dict[str, Any]]:
+    db = get_database()
+    query = {"lead_id": user["_id"]} if user.get("role") == "lead" else {"assignee_id": user["_id"]}
+    rows = await db.assigned_tasks.find(query).sort([("status", 1), ("eta", 1), ("created_at", -1)]).to_list(length=500)
+    tasks: list[dict[str, Any]] = []
+    for task in rows:
+        assignee = await db.users.find_one({"_id": task["assignee_id"]})
+        lead = await db.users.find_one({"_id": task["lead_id"]})
+        item = serialize_task(task)
+        item["assignee_name"] = full_name(assignee)
+        item["assignee_email"] = assignee.get("email", "") if assignee else ""
+        item["lead_name"] = full_name(lead)
+        tasks.append(item)
+    return tasks
+
+
+async def build_overdue_todos(user_id) -> list[dict[str, Any]]:
+    db = get_database()
+    today = date.today().isoformat()
+    rows = await db.member_todos.find(
+        {"user_id": user_id, "deadline": {"$lt": today}, "status": {"$ne": "completed"}}
+    ).sort("deadline", 1).limit(5).to_list(length=5)
+    return [serialize_todo(item) for item in rows]
+
+
+async def build_overdue_tasks(user_id) -> list[dict[str, Any]]:
+    db = get_database()
+    today = date.today().isoformat()
+    rows = await db.assigned_tasks.find(
+        {"assignee_id": user_id, "eta": {"$lt": today}, "status": {"$nin": ["done", "completed"]}}
+    ).sort("eta", 1).limit(5).to_list(length=5)
+    return [serialize_task(item) for item in rows]
+
+
 async def get_api_current_user(request: Request, role: str | None = None) -> dict[str, Any]:
     user_id = request.session.get("user_id")
     if not user_id:
@@ -96,7 +266,10 @@ async def build_missing_day_rows(lead_id) -> list[dict]:
         for target_date in target_dates:
             leave = await db.leave_days.find_one({"user_id": member["_id"], "date": target_date})
             update = await db.daily_updates.find_one({"user_id": member["_id"], "date": target_date})
-            if not leave and not update:
+            pending_request = await db.update_requests.find_one(
+                {"user_id": member["_id"], "date": target_date, "status": "pending"}
+            )
+            if not leave and not update and not pending_request:
                 rows.append(
                     {
                         "member_id": str(member["_id"]),
@@ -112,6 +285,14 @@ async def build_pending_requests(lead_id) -> list[dict]:
     db = get_database()
     requests: list[dict] = []
     async for item in db.update_requests.find({"lead_id": lead_id, "status": "pending"}).sort("created_at", -1):
+        leave = await db.leave_days.find_one({"user_id": item["user_id"], "date": item["date"]})
+        update = await db.daily_updates.find_one({"user_id": item["user_id"], "date": item["date"]})
+        if leave or (update and item.get("request_type") == "missed_day") or (update and item.get("request_type") == "late_eod" and update.get("proof_of_work")):
+            await db.update_requests.update_one(
+                {"_id": item["_id"]},
+                {"$set": {"status": "resolved", "reviewed_at": iso_now()}},
+            )
+            continue
         user = await db.users.find_one({"_id": item["user_id"]})
         row = object_id_str(item)
         row["member_name"] = f"{user['first_name']} {user.get('last_name', '')}".strip() if user else "Unknown"
@@ -123,7 +304,15 @@ async def build_pending_requests(lead_id) -> list[dict]:
 async def build_admin_dashboard_payload(current_user: dict[str, Any], member_name: str = "", update_date: str = "") -> dict[str, Any]:
     db = get_database()
     users_cursor = db.users.find({"lead_id": current_user["_id"], "role": "member"}).sort("first_name", 1)
-    users = [object_id_str(user) async for user in users_cursor]
+    users = []
+    async for user in users_cursor:
+        item = object_id_str(user) or {}
+        missing_dates = await get_member_missing_dates(user["_id"])
+        item["missing_day_count"] = len(missing_dates)
+        item["open_task_count"] = await db.assigned_tasks.count_documents(
+            {"assignee_id": user["_id"], "status": {"$nin": ["done", "completed"]}}
+        )
+        users.append(item)
 
     update_query: dict[str, Any] = {"lead_id": current_user["_id"]}
     if update_date:
@@ -159,6 +348,10 @@ async def build_admin_dashboard_payload(current_user: dict[str, Any], member_nam
         count = await db.daily_updates.count_documents({"lead_id": current_user["_id"], "date": target_date})
         entry_trend.append({"date": target_date, "count": count})
 
+    notifications = await build_notifications(current_user["_id"])
+    assigned_tasks = await build_assigned_tasks_for_user(current_user)
+    open_tasks = [task for task in assigned_tasks if task.get("status") not in {"done", "completed"}]
+
     return {
         "user": object_id_str(current_user),
         "team_members": users,
@@ -166,8 +359,12 @@ async def build_admin_dashboard_payload(current_user: dict[str, Any], member_nam
         "reports": reports,
         "total_entries": total_entries,
         "entry_trend": entry_trend,
+        "assigned_tasks": assigned_tasks,
+        "open_task_count": len(open_tasks),
         "pending_requests": await build_pending_requests(current_user["_id"]),
         "missing_days": await build_missing_day_rows(current_user["_id"]),
+        "notifications": notifications,
+        "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
         "filters": {"member_name": member_name, "update_date": update_date},
         "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
         "week_end": (date.today() - timedelta(days=date.today().weekday()) + timedelta(days=4)).isoformat(),
@@ -197,6 +394,14 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
     recent_updates = [object_id_str(item) async for item in cursor]
     pending_requests: list[dict] = []
     async for item in db.update_requests.find({"user_id": current_user["_id"], "status": "pending"}).sort("created_at", -1):
+        leave = await db.leave_days.find_one({"user_id": current_user["_id"], "date": item["date"]})
+        update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": item["date"]})
+        if leave or (update and item.get("request_type") == "missed_day") or (update and item.get("request_type") == "late_eod" and update.get("proof_of_work")):
+            await db.update_requests.update_one(
+                {"_id": item["_id"]},
+                {"$set": {"status": "resolved", "reviewed_at": iso_now()}},
+            )
+            continue
         pending_requests.append(object_id_str(item))
     total_entries = await db.daily_updates.count_documents({"user_id": current_user["_id"]})
     trend_dates = recent_dates(7)
@@ -204,6 +409,13 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
     for target_date in trend_dates:
         count = await db.daily_updates.count_documents({"user_id": current_user["_id"], "date": target_date})
         entry_trend.append({"date": target_date, "count": count})
+
+    missing_dates = await get_member_missing_dates(current_user["_id"])
+    todos = await build_member_todos(current_user["_id"])
+    overdue_todos = [item for item in todos if item.get("deadline") and item["deadline"] < today and item.get("status") != "completed"][:5]
+    assigned_tasks = await build_assigned_tasks_for_user(current_user)
+    overdue_tasks = [item for item in assigned_tasks if item.get("eta") and item["eta"] < today and item.get("status") not in {"done", "completed"}][:5]
+    notifications = await build_notifications(current_user["_id"])
 
     return {
         "user": object_id_str(current_user),
@@ -213,8 +425,17 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
         "is_requesting_missing_day": is_requesting_missing_day,
         "recent_updates": recent_updates,
         "pending_requests": pending_requests,
+        "request_history": await get_member_request_history(current_user["_id"]),
         "total_entries": total_entries,
         "entry_trend": entry_trend,
+        "missing_dates": missing_dates,
+        "missing_day_count": len(missing_dates),
+        "todos": todos,
+        "overdue_todos": overdue_todos,
+        "assigned_tasks": assigned_tasks,
+        "overdue_tasks": overdue_tasks,
+        "notifications": notifications,
+        "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
     }
 
 
@@ -238,6 +459,29 @@ async def api_logout(request: Request):
 async def admin_dashboard_data(request: Request, member_name: str = "", update_date: str = ""):
     current_user = await get_api_current_user(request, "lead")
     return await build_admin_dashboard_payload(current_user, member_name, update_date)
+
+
+@router.get("/notifications")
+async def api_notifications(request: Request):
+    current_user = await get_api_current_user(request)
+    items = await build_notifications(current_user["_id"], limit=12)
+    return {
+        "items": items,
+        "unread_count": len([item for item in items if not item.get("is_read")]),
+    }
+
+
+@router.post("/notifications/{notification_id}/read")
+async def api_mark_notification_read(request: Request, notification_id: str):
+    current_user = await get_api_current_user(request)
+    db = get_database()
+    result = await db.notifications.update_one(
+        {"_id": parse_object_id(notification_id), "user_id": current_user["_id"]},
+        {"$set": {"is_read": True, "read_at": iso_now()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    return {"ok": True, "message": "Notification marked as read."}
 
 
 @router.post("/admin/team-name")
@@ -358,6 +602,19 @@ async def api_reject_request(request: Request, request_id: str):
     return {"ok": True, "message": "Request rejected."}
 
 
+@router.post("/admin/requests/{request_id}/reset")
+async def api_reset_request(request: Request, request_id: str):
+    current_user = await get_api_current_user(request, "lead")
+    db = get_database()
+    result = await db.update_requests.update_one(
+        {"_id": parse_object_id(request_id), "lead_id": current_user["_id"], "status": "pending"},
+        {"$set": {"status": "reset", "reviewed_at": iso_now(), "reviewed_by": current_user["_id"]}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    return {"ok": True, "message": "Pending request reset."}
+
+
 @router.post("/admin/missing-days/leave")
 async def api_mark_leave(request: Request):
     current_user = await get_api_current_user(request, "lead")
@@ -377,6 +634,10 @@ async def api_mark_leave(request: Request):
             "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
         },
         upsert=True,
+    )
+    await db.update_requests.update_many(
+        {"user_id": member["_id"], "date": missing_date, "status": "pending"},
+        {"$set": {"status": "leave_marked", "reviewed_at": iso_now(), "reviewed_by": current_user["_id"]}},
     )
     return {"ok": True, "message": "Leave marked successfully."}
 
@@ -488,6 +749,210 @@ async def api_save_report(request: Request, report_id: str):
 async def member_dashboard_data(request: Request, edit_date: str = "", request_date: str = ""):
     current_user = await get_api_current_user(request, "member")
     return await build_member_dashboard_payload(current_user, edit_date, request_date)
+
+
+@router.get("/member/todos")
+async def api_member_todos(
+    request: Request,
+    deadline_from: str = "",
+    deadline_to: str = "",
+    completion: str = "",
+):
+    current_user = await get_api_current_user(request, "member")
+    status_value = ""
+    if completion == "completed":
+        status_value = "completed"
+    elif completion == "open":
+        status_value = ""
+    elif completion:
+        status_value = completion
+    rows = await build_member_todos(current_user["_id"], deadline_from, deadline_to, status_value)
+    if completion == "open":
+        rows = [item for item in rows if item.get("status") != "completed"]
+    return {"items": rows}
+
+
+@router.post("/member/todos")
+async def api_create_member_todo(request: Request):
+    current_user = await get_api_current_user(request, "member")
+    payload = await request.json()
+    title = str(payload.get("title", "")).strip()
+    details = str(payload.get("details", "")).strip()
+    deadline = str(payload.get("deadline", "")).strip()
+    status_value = normalize_status(payload.get("status", "pending"), {"pending", "in_progress", "completed"}, "pending")
+    if not title:
+        raise HTTPException(status_code=400, detail="Todo title is required.")
+    if not deadline or not is_valid_iso_date(deadline):
+        raise HTTPException(status_code=400, detail="A valid deadline is required.")
+    db = get_database()
+    document = {
+        "user_id": current_user["_id"],
+        "title": title,
+        "details": details,
+        "deadline": deadline,
+        "status": status_value,
+        "created_at": iso_now(),
+        "updated_at": iso_now(),
+    }
+    if status_value == "completed":
+        document["completed_at"] = iso_now()
+    inserted = await db.member_todos.insert_one(document)
+    return {"ok": True, "message": "Todo added.", "item_id": str(inserted.inserted_id)}
+
+
+@router.post("/member/todos/{todo_id}")
+async def api_update_member_todo(request: Request, todo_id: str):
+    current_user = await get_api_current_user(request, "member")
+    payload = await request.json()
+    db = get_database()
+    todo = await db.member_todos.find_one({"_id": parse_object_id(todo_id), "user_id": current_user["_id"]})
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found.")
+
+    title = str(payload.get("title", todo.get("title", ""))).strip()
+    details = str(payload.get("details", todo.get("details", ""))).strip()
+    deadline = str(payload.get("deadline", todo.get("deadline", ""))).strip()
+    status_value = normalize_status(payload.get("status", todo.get("status", "pending")), {"pending", "in_progress", "completed"}, "pending")
+    if not title:
+        raise HTTPException(status_code=400, detail="Todo title is required.")
+    if not deadline or not is_valid_iso_date(deadline):
+        raise HTTPException(status_code=400, detail="A valid deadline is required.")
+
+    update_doc: dict[str, Any] = {
+        "title": title,
+        "details": details,
+        "deadline": deadline,
+        "status": status_value,
+        "updated_at": iso_now(),
+    }
+    if status_value == "completed":
+        update_doc["completed_at"] = iso_now()
+    else:
+        update_doc["completed_at"] = None
+    await db.member_todos.update_one({"_id": todo["_id"]}, {"$set": update_doc})
+    return {"ok": True, "message": "Todo updated."}
+
+
+@router.get("/tasks")
+async def api_tasks(request: Request):
+    current_user = await get_api_current_user(request)
+    return {"items": await build_assigned_tasks_for_user(current_user)}
+
+
+@router.post("/admin/tasks")
+async def api_create_assigned_task(request: Request):
+    current_user = await get_api_current_user(request, "lead")
+    payload = await request.json()
+    assignee_id = str(payload.get("assignee_id", "")).strip()
+    title = str(payload.get("title", "")).strip()
+    description = str(payload.get("description", "")).strip()
+    eta = str(payload.get("eta", "")).strip()
+    remarks = str(payload.get("remarks", "")).strip()
+    status_value = normalize_status(payload.get("status", "todo"), {"todo", "in_progress", "blocked", "done"}, "todo")
+    if not assignee_id:
+        raise HTTPException(status_code=400, detail="Assignee is required.")
+    if not title:
+        raise HTTPException(status_code=400, detail="Task title is required.")
+    if not eta or not is_valid_iso_date(eta):
+        raise HTTPException(status_code=400, detail="A valid ETA is required.")
+
+    db = get_database()
+    assignee = await db.users.find_one({"_id": parse_object_id(assignee_id), "lead_id": current_user["_id"], "role": "member"})
+    if not assignee:
+        raise HTTPException(status_code=404, detail="Member not found.")
+
+    document = {
+        "lead_id": current_user["_id"],
+        "assignee_id": assignee["_id"],
+        "title": title,
+        "description": description,
+        "eta": eta,
+        "remarks": remarks,
+        "status": status_value,
+        "activities": [
+            {
+                "sender_id": current_user["_id"],
+                "sender_name": full_name(current_user),
+                "message": "Task assigned.",
+                "proof": "",
+                "status": status_value,
+                "created_at": iso_now(),
+            }
+        ],
+        "created_at": iso_now(),
+        "updated_at": iso_now(),
+    }
+    inserted = await db.assigned_tasks.insert_one(document)
+    await create_notification(
+        assignee["_id"],
+        "New task assigned",
+        f"{title} has been assigned to you.",
+        "task_assigned",
+        "#tasks",
+        {"task_id": str(inserted.inserted_id)},
+    )
+    return {"ok": True, "message": "Task assigned."}
+
+
+@router.post("/tasks/{task_id}")
+async def api_update_task(request: Request, task_id: str):
+    current_user = await get_api_current_user(request)
+    payload = await request.json()
+    db = get_database()
+    query = {"_id": parse_object_id(task_id)}
+    if current_user.get("role") == "lead":
+        query["lead_id"] = current_user["_id"]
+    else:
+        query["assignee_id"] = current_user["_id"]
+    task = await db.assigned_tasks.find_one(query)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    status_allowed = {"todo", "in_progress", "blocked", "done"}
+    status_value = normalize_status(payload.get("status", task.get("status", "todo")), status_allowed, task.get("status", "todo"))
+    update_fields: dict[str, Any] = {"status": status_value, "updated_at": iso_now()}
+    message = str(payload.get("message", "")).strip()
+    proof = str(payload.get("proof", "")).strip()
+    if current_user.get("role") == "lead":
+        remarks = str(payload.get("remarks", task.get("remarks", ""))).strip()
+        eta = str(payload.get("eta", task.get("eta", ""))).strip()
+        title = str(payload.get("title", task.get("title", ""))).strip()
+        description = str(payload.get("description", task.get("description", ""))).strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Task title is required.")
+        if not eta or not is_valid_iso_date(eta):
+            raise HTTPException(status_code=400, detail="A valid ETA is required.")
+        update_fields.update({"remarks": remarks, "eta": eta, "title": title, "description": description})
+    else:
+        if not message and not proof and status_value == task.get("status"):
+            raise HTTPException(status_code=400, detail="Add a status change, proof, or acknowledgement update.")
+
+    activity = None
+    if message or proof or status_value != task.get("status"):
+        activity = {
+            "sender_id": current_user["_id"],
+            "sender_name": full_name(current_user),
+            "message": message,
+            "proof": proof,
+            "status": status_value,
+            "created_at": iso_now(),
+        }
+
+    update_operation: dict[str, Any] = {"$set": update_fields}
+    if activity:
+        update_operation["$push"] = {"activities": activity}
+    await db.assigned_tasks.update_one({"_id": task["_id"]}, update_operation)
+
+    if current_user.get("role") == "member":
+        await create_notification(
+            task["lead_id"],
+            "Task updated by member",
+            f"{full_name(current_user)} updated task: {task.get('title', '')}",
+            "task_updated",
+            "#tasks",
+            {"task_id": str(task["_id"])},
+        )
+    return {"ok": True, "message": "Task updated."}
 
 
 @router.post("/member/daily-update")

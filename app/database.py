@@ -39,3 +39,7 @@ async def ensure_indexes() -> None:
     await db.update_requests.create_index([("user_id", 1), ("date", 1), ("status", 1)])
     await db.notification_logs.create_index([("type", 1), ("user_id", 1), ("target_date", 1)], unique=True)
     await db.leave_days.create_index([("user_id", 1), ("date", 1)], unique=True)
+    await db.member_todos.create_index([("user_id", 1), ("deadline", 1), ("status", 1)])
+    await db.assigned_tasks.create_index([("assignee_id", 1), ("status", 1), ("eta", 1)])
+    await db.assigned_tasks.create_index([("lead_id", 1), ("created_at", -1)])
+    await db.notifications.create_index([("user_id", 1), ("is_read", 1), ("created_at", -1)])
