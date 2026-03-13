@@ -59,7 +59,7 @@ On first startup, the application seeds one team lead account from `.env`:
 Use this command to add more TL accounts:
 
 ```bash
-python scripts/create_lead.py --email tl2@example.com --first-name DemoTL --last-name DTL --password DTL
+python -m scripts.create_lead --email demotla@iamneo.ai --first-name demo --last-name tl --password admin
 ```
 
 ## Reset Any User Password by Email
