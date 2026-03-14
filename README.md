@@ -86,4 +86,3 @@ If the Gemini call fails or the API key is missing, the app falls back to a dete
 - The frontend is intentionally minimal and server-rendered with Jinja2 and Bootstrap.
 
 
-### azure - CI/CD ###
