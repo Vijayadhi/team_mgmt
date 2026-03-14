@@ -1,4 +1,5 @@
 import smtplib
+import traceback
 from email.message import EmailMessage
 
 from app.config import get_settings
@@ -23,4 +24,5 @@ async def send_email(subject: str, recipients: list[str], body: str) -> bool:
             server.send_message(message)
         return True
     except Exception:
+        traceback.print_exc()
         return False

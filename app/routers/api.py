@@ -14,6 +14,7 @@ from app.dependencies import (
 from app.security import hash_password, verify_password
 from app.services.ai_summary import derive_bottleneck_risk, group_updates_for_summary, summarize_weekly_updates
 from app.services.email_service import send_email
+from app.services.report_schema import build_template_report, normalize_report_template
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -53,6 +54,42 @@ def normalize_report_rows(rows: list[dict]) -> list[dict]:
             }
         )
     return normalized
+
+
+def report_tail_fields(report: dict[str, Any]) -> dict[str, str]:
+    return {
+        "overall_challenges": str(report.get("overall_challenges", "")).strip(),
+        "bottleneck_risk": str(report.get("bottleneck_risk", "")).strip(),
+        "overall_next_week_plan": str(report.get("overall_next_week_plan", "")).strip(),
+    }
+
+
+def normalize_report_payload(report: dict[str, Any]) -> dict[str, Any]:
+    template = normalize_report_template(report)
+    return {
+        "client_label": template["client_label"],
+        "prepared_by": template["prepared_by"],
+        "executive_summary": template["executive_summary"],
+        "lead_activities": template["lead_activities"],
+        "client_feedback": template["client_feedback"],
+        "client_action_taken": template["client_action_taken"],
+        "client_feedback_status": template["client_feedback_status"],
+        "delivery_assessment_plan": template["delivery_assessment_plan"],
+        "new_batch_kickoffs": template["new_batch_kickoffs"],
+        "assessments_scheduled": template["assessments_scheduled"],
+        "remarks_escalations": template["remarks_escalations"],
+        "report_prepared_by": template["report_prepared_by"],
+        "report_date": template["report_date"],
+        "overall_challenges": template["overall_challenges"],
+        "bottleneck_risk": template["bottleneck_risk"],
+        "overall_next_week_plan": template["overall_next_week_plan"],
+        "last_week_rows": template["last_week_rows"],
+        "upcoming_week_rows": template["upcoming_week_rows"],
+        "detailed_observations": template["detailed_observations"],
+        "bottleneck_rows": template["bottleneck_rows"],
+        "action_items": template["action_items"],
+        "readiness_checklist": template["readiness_checklist"],
+    }
 
 
 def workdays_back(count: int) -> list[str]:
@@ -297,6 +334,13 @@ async def build_pending_requests(lead_id) -> list[dict]:
         row = object_id_str(item)
         row["member_name"] = f"{user['first_name']} {user.get('last_name', '')}".strip() if user else "Unknown"
         row["email"] = user["email"] if user else ""
+        payload = row.get("payload", {}) or {}
+        row["plan"] = payload.get("plan", "")
+        row["eta"] = payload.get("eta", "")
+        row["client_name"] = payload.get("client_name", "")
+        row["extra_work"] = payload.get("extra_work", "")
+        row["challenges"] = payload.get("challenges", "")
+        row["proof_of_work"] = payload.get("proof_of_work", "")
         requests.append(row)
     return requests
 
@@ -367,11 +411,16 @@ async def build_admin_dashboard_payload(current_user: dict[str, Any], member_nam
         "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
         "filters": {"member_name": member_name, "update_date": update_date},
         "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
-        "week_end": (date.today() - timedelta(days=date.today().weekday()) + timedelta(days=4)).isoformat(),
+        "week_end": date.today().isoformat(),
     }
 
 
-async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date: str = "", request_date: str = "") -> dict[str, Any]:
+async def build_member_dashboard_payload(
+    current_user: dict[str, Any],
+    edit_date: str = "",
+    request_date: str = "",
+    section: str = "dashboard",
+) -> dict[str, Any]:
     db = get_database()
     today = date.today().isoformat()
     form_data = blank_member_form(today)
@@ -390,19 +439,22 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
             form_data = blank_member_form(request_date)
             is_requesting_missing_day = True
 
-    cursor = db.daily_updates.find({"user_id": current_user["_id"]}).sort("date", -1).limit(10)
-    recent_updates = [object_id_str(item) async for item in cursor]
+    recent_updates = []
+    if section in {"dashboard", "history", "workspace"}:
+        cursor = db.daily_updates.find({"user_id": current_user["_id"]}).sort("date", -1).limit(10)
+        recent_updates = [object_id_str(item) async for item in cursor]
     pending_requests: list[dict] = []
-    async for item in db.update_requests.find({"user_id": current_user["_id"], "status": "pending"}).sort("created_at", -1):
-        leave = await db.leave_days.find_one({"user_id": current_user["_id"], "date": item["date"]})
-        update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": item["date"]})
-        if leave or (update and item.get("request_type") == "missed_day") or (update and item.get("request_type") == "late_eod" and update.get("proof_of_work")):
-            await db.update_requests.update_one(
-                {"_id": item["_id"]},
-                {"$set": {"status": "resolved", "reviewed_at": iso_now()}},
-            )
-            continue
-        pending_requests.append(object_id_str(item))
+    if section in {"dashboard", "requests"}:
+        async for item in db.update_requests.find({"user_id": current_user["_id"], "status": "pending"}).sort("created_at", -1):
+            leave = await db.leave_days.find_one({"user_id": current_user["_id"], "date": item["date"]})
+            update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": item["date"]})
+            if leave or (update and item.get("request_type") == "missed_day") or (update and item.get("request_type") == "late_eod" and update.get("proof_of_work")):
+                await db.update_requests.update_one(
+                    {"_id": item["_id"]},
+                    {"$set": {"status": "resolved", "reviewed_at": iso_now()}},
+                )
+                continue
+            pending_requests.append(object_id_str(item))
     total_entries = await db.daily_updates.count_documents({"user_id": current_user["_id"]})
     trend_dates = recent_dates(7)
     entry_trend = []
@@ -410,12 +462,12 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
         count = await db.daily_updates.count_documents({"user_id": current_user["_id"], "date": target_date})
         entry_trend.append({"date": target_date, "count": count})
 
-    missing_dates = await get_member_missing_dates(current_user["_id"])
-    todos = await build_member_todos(current_user["_id"])
+    missing_dates = await get_member_missing_dates(current_user["_id"]) if section in {"dashboard", "requests"} else []
+    todos = await build_member_todos(current_user["_id"]) if section in {"dashboard", "todo"} else []
     overdue_todos = [item for item in todos if item.get("deadline") and item["deadline"] < today and item.get("status") != "completed"][:5]
-    assigned_tasks = await build_assigned_tasks_for_user(current_user)
+    assigned_tasks = await build_assigned_tasks_for_user(current_user) if section in {"dashboard", "tasks"} else []
     overdue_tasks = [item for item in assigned_tasks if item.get("eta") and item["eta"] < today and item.get("status") not in {"done", "completed"}][:5]
-    notifications = await build_notifications(current_user["_id"])
+    notifications = await build_notifications(current_user["_id"]) if section in {"dashboard", "tasks", "requests", "workspace", "history", "todo"} else []
 
     return {
         "user": object_id_str(current_user),
@@ -425,7 +477,7 @@ async def build_member_dashboard_payload(current_user: dict[str, Any], edit_date
         "is_requesting_missing_day": is_requesting_missing_day,
         "recent_updates": recent_updates,
         "pending_requests": pending_requests,
-        "request_history": await get_member_request_history(current_user["_id"]),
+        "request_history": await get_member_request_history(current_user["_id"]) if section in {"dashboard", "requests"} else [],
         "total_entries": total_entries,
         "entry_trend": entry_trend,
         "missing_dates": missing_dates,
@@ -687,6 +739,14 @@ async def api_generate_report(request: Request):
     summary = await summarize_weekly_updates(members_payload)
     normalized_rows = normalize_report_rows(summary.get("rows", []))
     bottleneck_risk = summary.get("bottleneck_risk") or derive_bottleneck_risk(summary.get("overall_challenges", ""))
+    lead_name = full_name(current_user)
+    template_payload = build_template_report(
+        week_start=week_start,
+        week_end=week_end,
+        lead_name=lead_name,
+        summary=summary,
+        members_payload=members_payload,
+    )
     report = {
         "lead_id": current_user["_id"],
         "week_start": week_start,
@@ -694,7 +754,9 @@ async def api_generate_report(request: Request):
         "team_summary": summary.get("team_summary", ""),
         "overall_challenges": summary.get("overall_challenges", ""),
         "bottleneck_risk": bottleneck_risk,
+        "overall_next_week_plan": summary.get("overall_next_week_plan", ""),
         "rows": normalized_rows,
+        **template_payload,
         "status": "draft",
         "generated_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
@@ -712,6 +774,8 @@ async def api_report_detail(request: Request, report_id: str):
         raise HTTPException(status_code=404, detail="Report not found.")
     report["rows"] = normalize_report_rows(report.get("rows", []))
     report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
+    report["overall_next_week_plan"] = report.get("overall_next_week_plan", "")
+    report.update(normalize_report_payload(report))
     data = object_id_str(report)
     data["download_url"] = f"/admin/reports/{data['id']}/download"
     return data
@@ -728,7 +792,12 @@ async def api_save_report(request: Request, report_id: str):
 
     overall_challenges = str(payload.get("overall_challenges", "")).strip()
     bottleneck_risk = str(payload.get("bottleneck_risk", "")).strip() or derive_bottleneck_risk(overall_challenges)
+    overall_next_week_plan = str(payload.get("overall_next_week_plan", "")).strip()
     rows = normalize_report_rows(payload.get("rows", []))
+    template_payload = normalize_report_payload(payload)
+    template_payload["overall_challenges"] = overall_challenges
+    template_payload["bottleneck_risk"] = bottleneck_risk
+    template_payload["overall_next_week_plan"] = overall_next_week_plan
     await db.weekly_reports.update_one(
         {"_id": report["_id"]},
         {
@@ -736,7 +805,9 @@ async def api_save_report(request: Request, report_id: str):
                 "team_summary": str(payload.get("team_summary", "")).strip(),
                 "overall_challenges": overall_challenges,
                 "bottleneck_risk": bottleneck_risk,
+                "overall_next_week_plan": overall_next_week_plan,
                 "rows": rows,
+                **template_payload,
                 "status": "final",
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -746,9 +817,9 @@ async def api_save_report(request: Request, report_id: str):
 
 
 @router.get("/member/dashboard")
-async def member_dashboard_data(request: Request, edit_date: str = "", request_date: str = ""):
+async def member_dashboard_data(request: Request, edit_date: str = "", request_date: str = "", section: str = "dashboard"):
     current_user = await get_api_current_user(request, "member")
-    return await build_member_dashboard_payload(current_user, edit_date, request_date)
+    return await build_member_dashboard_payload(current_user, edit_date, request_date, section)
 
 
 @router.get("/member/todos")
@@ -971,11 +1042,16 @@ async def api_save_daily_update(request: Request):
     is_university = bool(payload.get("is_university"))
     today = date.today().isoformat()
 
+    if not cleaned_date or not is_valid_iso_date(cleaned_date):
+        raise HTTPException(status_code=400, detail="A valid date is required.")
+    if cleaned_date > today:
+        raise HTTPException(status_code=400, detail="Future dates are not allowed.")
+
     db = get_database()
     existing = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": cleaned_date})
 
-    if existing:
-        if cleaned_date < today:
+    if cleaned_date < today:
+        if existing:
             if not cleaned_proof:
                 raise HTTPException(status_code=400, detail="Proof of work is mandatory for late EOD requests.")
             if not cleaned_reason:
@@ -985,36 +1061,39 @@ async def api_save_daily_update(request: Request):
                 {
                     "$set": {
                         "lead_id": current_user["lead_id"],
-                        "payload": {"extra_work": cleaned_extra, "challenges": cleaned_challenges, "proof_of_work": cleaned_proof},
+                        "payload": {
+                            "plan": existing.get("plan", ""),
+                            "eta": existing.get("eta", ""),
+                            "client_name": existing.get("client_name", ""),
+                            "is_corporate": existing.get("is_corporate", False),
+                            "is_university": existing.get("is_university", False),
+                            "extra_work": cleaned_extra,
+                            "challenges": cleaned_challenges,
+                            "proof_of_work": cleaned_proof,
+                        },
                         "reason": cleaned_reason,
                         "updated_at": datetime.now(timezone.utc),
                     },
-                    "$setOnInsert": {"user_id": current_user["_id"], "request_type": "late_eod", "date": cleaned_date, "status": "pending", "created_at": datetime.now(timezone.utc)},
+                    "$setOnInsert": {
+                        "user_id": current_user["_id"],
+                        "request_type": "late_eod",
+                        "date": cleaned_date,
+                        "status": "pending",
+                        "created_at": datetime.now(timezone.utc),
+                    },
                 },
                 upsert=True,
             )
-            return {"ok": True, "message": "Late EOD request submitted.", "next": {"view": "requests"}}
+            return {"ok": True, "message": "Late EOD request submitted for approval.", "next": {"view": "requests"}}
 
-        if not cleaned_proof:
-            raise HTTPException(status_code=400, detail="Proof of work is mandatory while editing an existing task.")
-        await db.daily_updates.update_one(
-            {"_id": existing["_id"]},
-            {"$set": {"extra_work": cleaned_extra, "challenges": cleaned_challenges, "proof_of_work": cleaned_proof, "updated_at": datetime.now(timezone.utc)}},
-        )
-        return {"ok": True, "message": "End-of-day update saved.", "next": {"view": "history"}}
-
-    if not cleaned_date:
-        raise HTTPException(status_code=400, detail="Date is required.")
-    if not cleaned_plan:
-        raise HTTPException(status_code=400, detail="Morning plan is required.")
-    if not cleaned_eta:
-        raise HTTPException(status_code=400, detail="ETA is required.")
-    if not cleaned_client:
-        raise HTTPException(status_code=400, detail="Client is required.")
-    if not is_corporate and not is_university:
-        raise HTTPException(status_code=400, detail="Select at least one category: corporate or university.")
-
-    if cleaned_date < today:
+        if not cleaned_plan:
+            raise HTTPException(status_code=400, detail="Morning plan is required.")
+        if not cleaned_eta:
+            raise HTTPException(status_code=400, detail="ETA is required.")
+        if not cleaned_client:
+            raise HTTPException(status_code=400, detail="Client is required.")
+        if not is_corporate and not is_university:
+            raise HTTPException(status_code=400, detail="Select at least one category: corporate or university.")
         if not cleaned_proof:
             raise HTTPException(status_code=400, detail="Proof of work is mandatory for missed-day requests.")
         if not cleaned_reason:
@@ -1037,11 +1116,38 @@ async def api_save_daily_update(request: Request):
                     "reason": cleaned_reason,
                     "updated_at": datetime.now(timezone.utc),
                 },
-                "$setOnInsert": {"user_id": current_user["_id"], "request_type": "missed_day", "date": cleaned_date, "status": "pending", "created_at": datetime.now(timezone.utc)},
+                "$setOnInsert": {
+                    "user_id": current_user["_id"],
+                    "request_type": "missed_day",
+                    "date": cleaned_date,
+                    "status": "pending",
+                    "created_at": datetime.now(timezone.utc),
+                },
             },
             upsert=True,
         )
-        return {"ok": True, "message": "Missed-day request submitted.", "next": {"view": "requests"}}
+        return {"ok": True, "message": "Missed-day request submitted for approval.", "next": {"view": "requests"}}
+
+    if existing:
+        if cleaned_date != today:
+            raise HTTPException(status_code=400, detail="Past-date entries must go through approval requests.")
+
+        if not cleaned_proof:
+            raise HTTPException(status_code=400, detail="Proof of work is mandatory while editing an existing task.")
+        await db.daily_updates.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"extra_work": cleaned_extra, "challenges": cleaned_challenges, "proof_of_work": cleaned_proof, "updated_at": datetime.now(timezone.utc)}},
+        )
+        return {"ok": True, "message": "End-of-day update saved.", "next": {"view": "history"}}
+
+    if not cleaned_plan:
+        raise HTTPException(status_code=400, detail="Morning plan is required.")
+    if not cleaned_eta:
+        raise HTTPException(status_code=400, detail="ETA is required.")
+    if not cleaned_client:
+        raise HTTPException(status_code=400, detail="Client is required.")
+    if not is_corporate and not is_university:
+        raise HTTPException(status_code=400, detail="Select at least one category: corporate or university.")
 
     await db.daily_updates.insert_one(
         {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   apiFetch,
+  BusyOverlay,
   DashboardPage,
   DataTable,
   FormField,
@@ -151,12 +152,13 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [taskForm, setTaskForm] = useState({ title: "", description: "", eta: "", remarks: "", status: "todo", message: "", proof: "" });
 
-  const load = async (params = {}) => {
-    setLoading(true);
+  const load = async (params = {}, options = {}) => {
+    if (!options.silent || !data) setLoading(true);
     try {
       const search = new URLSearchParams();
       if (params.edit_date) search.set("edit_date", params.edit_date);
       if (params.request_date) search.set("request_date", params.request_date);
+      search.set("section", params.section || view || "dashboard");
       const payload = await apiFetch(`/api/member/dashboard?${search.toString()}`);
       setData(payload);
       setFormState({ ...(payload.form_data || {}), date: payload.form_data?.date || payload.today });
@@ -167,11 +169,14 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
     } catch (error) {
       pushToast("error", "Dashboard error", error.message);
     } finally {
-      setLoading(false);
+      if (!options.silent || !data) setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load({ section: view || "dashboard" }); }, []);
+  useEffect(() => {
+    if (data) load({ section: view || "dashboard" }, { silent: true });
+  }, [view]);
   useEffect(() => { if (taskFocusId) setSelectedTaskId(taskFocusId); }, [taskFocusId]);
 
   const selectedTask = data?.assigned_tasks?.find((item) => item.id === selectedTaskId) || null;
@@ -219,14 +224,14 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       { title: "Assigned tasks", copy: data.assigned_tasks.length ? `${data.assigned_tasks.length} assigned task(s) are visible in your task board.` : "No assigned tasks at the moment." },
     ]} />;
   } else if (view === "workspace") {
-    content = <WorkspaceForm data={data} formState={formState} setFormState={setFormState} working={working} onReset={async () => { setView("workspace"); await load(); }} onSubmit={async () => {
+    content = <WorkspaceForm data={data} formState={formState} setFormState={setFormState} working={working} onReset={async () => { setView("workspace"); await load({}, { silent: true }); }} onSubmit={async () => {
       setWorking(true);
       try {
         const result = await apiFetch("/api/member/daily-update", { method: "POST", body: JSON.stringify({ entry_date: formState.date, plan: formState.plan, extra_work: formState.extra_work, challenges: formState.challenges, eta: formState.eta, proof_of_work: formState.proof_of_work, client_name: formState.client_name, request_reason: formState.request_reason, is_corporate: !!formState.is_corporate, is_university: !!formState.is_university }) });
         pushToast("success", "Saved", result.message);
-        if (result.next?.edit_date) await load({ edit_date: result.next.edit_date });
-        else if (result.next?.view === "requests") { setView("requests"); await load(); }
-        else { setView("history"); await load(); }
+        if (result.next?.edit_date) await load({ edit_date: result.next.edit_date, section: "workspace" }, { silent: true });
+        else if (result.next?.view === "requests") { setView("requests"); await load({ section: "requests" }, { silent: true }); }
+        else { setView("history"); await load({ section: "history" }, { silent: true }); }
       } catch (error) { pushToast("error", "Save failed", error.message); } finally { setWorking(false); }
     }} />;
   } else if (view === "todo") {
@@ -236,7 +241,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
         await apiFetch(todoForm.id ? `/api/member/todos/${todoForm.id}` : "/api/member/todos", { method: "POST", body: JSON.stringify(todoForm) });
         pushToast("success", "Todo saved", todoForm.id ? "Todo updated successfully." : "Todo added successfully.");
         setTodoForm({ id: "", title: "", details: "", deadline: "", status: "pending" });
-        await load();
+        await load({}, { silent: true });
       } catch (error) { pushToast("error", "Todo save failed", error.message); } finally { setWorking(false); }
     }} working={working} />;
   } else if (view === "tasks") {
@@ -251,7 +256,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       <TaskPanel task={selectedTask} form={taskForm} setForm={setTaskForm} working={working} onSave={async () => {
         if (!selectedTask) return;
         setWorking(true);
-        try { await apiFetch(`/api/tasks/${selectedTask.id}`, { method: "POST", body: JSON.stringify(taskForm) }); pushToast("success", "Task updated", "Your task update has been submitted."); await load(); } catch (error) { pushToast("error", "Task update failed", error.message); } finally { setWorking(false); }
+        try { await apiFetch(`/api/tasks/${selectedTask.id}`, { method: "POST", body: JSON.stringify(taskForm) }); pushToast("success", "Task updated", "Your task update has been submitted."); await load({}, { silent: true }); } catch (error) { pushToast("error", "Task update failed", error.message); } finally { setWorking(false); }
       }} />
     </div>;
   } else if (view === "history") {
@@ -261,7 +266,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
       { key: "client", label: "Client", render: (item) => item.client_name || "-" },
       { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
-      { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={async () => { setView("workspace"); await load({ edit_date: item.date }); }}>Edit</button> },
+      { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={async () => { setView("workspace"); await load({ edit_date: item.date, section: "workspace" }, { silent: true }); }}>Edit</button> },
     ]} /></SectionCard>;
   } else if (view === "requests") {
     content = <div className="page-stack">
@@ -270,7 +275,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
         <div className="action-row"><button className="primary-button" onClick={async () => {
           if (!requestDate) { pushToast("error", "Date required", "Choose the missed date first."); return; }
           setView("workspace");
-          await load({ request_date: requestDate });
+          await load({ request_date: requestDate, section: "workspace" }, { silent: true });
         }}>Open request form</button></div>
         {data.missing_dates?.length ? <div className="subtle-list">{data.missing_dates.slice(0, 12).map((item) => <span key={item} className="subtle-pill">{item}</span>)}</div> : null}
       </SectionCard>
@@ -298,6 +303,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
 
   return (
     <main className="workspace-main">
+      <BusyOverlay show={working} label="Saving your update..." />
       <Header title="Member workspace" copy="A clean, single-sidebar workspace for daily updates, todo tracking, requests, and assigned tasks." onMenuToggle={onMenuToggle} notifications={data.notifications || []} unreadCount={data.unread_notifications || 0} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
       <Hero title={`${session.user.first_name} ${session.user.last_name || ""}`} copy="Simple views, clear tracking, and fast access to everything that needs action." meta={[{ label: "Pending requests", value: String(data.pending_requests.length) }, { label: "Missed days", value: String(data.missing_day_count) }]} />
       {content}

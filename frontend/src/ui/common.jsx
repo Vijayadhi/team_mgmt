@@ -29,6 +29,7 @@ import {
 export const ADMIN_NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "members", label: "Members", icon: Users },
+  { key: "updates", label: "Updates", icon: CalendarDays },
   { key: "tasks", label: "Tasks", icon: ClipboardList },
   { key: "approvals", label: "Approvals", icon: CheckCircle2 },
   { key: "compliance", label: "Missing Days", icon: ShieldAlert },
@@ -142,6 +143,18 @@ export function LoadingScreen() {
         <div className="loading-spinner" />
         <h2>Loading workspace</h2>
         <p>Preparing the current dashboard state and member activity.</p>
+      </div>
+    </div>
+  );
+}
+
+export function BusyOverlay({ show, label = "Working..." }) {
+  if (!show) return null;
+  return (
+    <div className="busy-overlay" role="status" aria-live="polite">
+      <div className="busy-card">
+        <div className="loading-spinner" />
+        <strong>{label}</strong>
       </div>
     </div>
   );

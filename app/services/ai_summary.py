@@ -59,6 +59,7 @@ def _fallback_summary(members: list[dict[str, Any]]) -> dict[str, Any]:
         "rows": rows,
         "overall_challenges": overall_challenges,
         "bottleneck_risk": derive_bottleneck_risk(overall_challenges),
+        "overall_next_week_plan": "Continue planned execution, close open dependencies early, and monitor recurring blockers.",
     }
 
 
@@ -75,10 +76,11 @@ async def summarize_weekly_updates(members: list[dict[str, Any]]) -> dict[str, A
     prompt = {
         "task": (
             "Summarize a team's weekly update data. "
-            "Return strict JSON with keys: team_summary, overall_challenges, bottleneck_risk, rows. "
+            "Return strict JSON with keys: team_summary, overall_challenges, bottleneck_risk, overall_next_week_plan, rows. "
             "rows must be an array of objects with member_name, activity_summary, "
             "extra_work_summary, challenges_summary, manager_notes, next_week_action_plan. "
-            "Set next_week_action_plan to an empty string because the lead will fill it manually. "
+            "Generate a concise but actionable overall_next_week_plan for the team. "
+            "Set each row next_week_action_plan to a concise suggested next-week action for that member. "
             "Include ETA, proof of work, client context, and whether work was corporate or university where relevant. "
             "Keep each cell concise and professional."
         ),
@@ -98,6 +100,7 @@ async def summarize_weekly_updates(members: list[dict[str, Any]]) -> dict[str, A
         parsed["bottleneck_risk"] = parsed.get("bottleneck_risk") or derive_bottleneck_risk(parsed.get("overall_challenges", ""))
         for row in parsed.get("rows", []):
             row.setdefault("next_week_action_plan", "")
+        parsed.setdefault("overall_next_week_plan", "")
         return parsed
     except Exception:
         return _fallback_summary(members)

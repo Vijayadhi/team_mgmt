@@ -10,6 +10,7 @@ from app.security import hash_password, verify_password
 from app.services.ai_summary import derive_bottleneck_risk, group_updates_for_summary, summarize_weekly_updates
 from app.services.email_service import send_email
 from app.services.report_pdf import build_weekly_report_pdf
+from app.services.report_schema import build_template_report, normalize_report_template
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -299,6 +300,14 @@ async def generate_report(
     summary = await summarize_weekly_updates(members_payload)
     normalized_rows = normalize_report_rows(summary.get("rows", []))
     bottleneck_risk = summary.get("bottleneck_risk") or derive_bottleneck_risk(summary.get("overall_challenges", ""))
+    lead_name = f"{current_user['first_name']} {current_user['last_name']}".strip()
+    template_payload = build_template_report(
+        week_start=week_start,
+        week_end=week_end,
+        lead_name=lead_name,
+        summary=summary,
+        members_payload=members_payload,
+    )
     report = {
         "lead_id": current_user["_id"],
         "week_start": week_start,
@@ -307,6 +316,7 @@ async def generate_report(
         "overall_challenges": summary.get("overall_challenges", ""),
         "bottleneck_risk": bottleneck_risk,
         "rows": normalized_rows,
+        **template_payload,
         "status": "draft",
         "generated_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
@@ -323,6 +333,7 @@ async def preview_report(request: Request, report_id: str, current_user: dict = 
         raise HTTPException(status_code=404, detail="Report not found")
     report["rows"] = normalize_report_rows(report.get("rows", []))
     report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
+    report.update(normalize_report_template(report))
     return templates.TemplateResponse(
         "admin/report_preview.html",
         {"request": request, "user": object_id_str(current_user), "report": object_id_str(report)},
@@ -382,6 +393,7 @@ async def download_report(report_id: str, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=404, detail="Report not found")
     report["rows"] = normalize_report_rows(report.get("rows", []))
     report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
+    report.update(normalize_report_template(report))
     lead_name = f"{current_user['first_name']} {current_user['last_name']}".strip()
     pdf_bytes = build_weekly_report_pdf(object_id_str(report), lead_name)
     filename = f"weekly-report-{report['week_start']}-to-{report['week_end']}.pdf"

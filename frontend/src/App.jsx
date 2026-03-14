@@ -47,7 +47,7 @@ function App() {
   if (!session) return <LoadingScreen />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarOpen ? "" : "app-shell-collapsed"}`}>
       <Sidebar
         session={session}
         view={view}
