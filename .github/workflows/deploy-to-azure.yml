@@ -3,7 +3,8 @@ name: Build and Deploy Docker image to Azure App Service
 on:
   push:
     branches:
-      - main
+      - beta-v1
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: myapp
