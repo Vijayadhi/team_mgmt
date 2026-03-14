@@ -84,3 +84,6 @@ If the Gemini call fails or the API key is missing, the app falls back to a dete
 - Team members are scoped to a single team lead through `lead_id`.
 - Finalized weekly reports are stored in MongoDB and can be reopened or downloaded later.
 - The frontend is intentionally minimal and server-rendered with Jinja2 and Bootstrap.
+
+
+### azure - CI/CD ###
