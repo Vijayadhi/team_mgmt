@@ -55,15 +55,28 @@ def format_date(value: date | datetime | str | None) -> str:
     return str(value)
 
 
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe_value(item) for item in value]
+    if isinstance(value, dict):
+        converted: dict[str, Any] = {}
+        for key, item in value.items():
+            converted[key] = _json_safe_value(item)
+        if "_id" in converted:
+            converted["id"] = converted.pop("_id")
+        return converted
+    return value
+
+
 def object_id_str(document: dict[str, Any] | None) -> dict[str, Any] | None:
     if not document:
         return document
-    converted = dict(document)
-    converted["id"] = str(converted.pop("_id"))
-    for key in ("user_id", "lead_id", "report_id"):
-        if key in converted and isinstance(converted[key], ObjectId):
-            converted[key] = str(converted[key])
-    return converted
+    converted = _json_safe_value(dict(document))
+    return converted if isinstance(converted, dict) else document
 
 
 def add_flash(request: Request, level: str, message: str) -> None:

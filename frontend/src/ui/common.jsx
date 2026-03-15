@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -16,15 +16,8 @@ import {
   CheckCircle2,
   Users,
 } from "lucide-react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+
+const EntryTrendChart = lazy(() => import("./entry-trend-chart"));
 
 export const ADMIN_NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -43,7 +36,6 @@ export const MEMBER_NAV = [
   { key: "todo", label: "Todo", icon: ListTodo },
   { key: "tasks", label: "Tasks", icon: ClipboardList },
   { key: "history", label: "History", icon: CalendarDays },
-  { key: "requests", label: "Requests", icon: ShieldAlert },
   { key: "settings", label: "Settings", icon: LockKeyhole },
 ];
 
@@ -179,6 +171,7 @@ export function ToastStack({ toasts, removeToast }) {
 }
 
 export function Sidebar({ session, view, setView, onLogout, open, onClose }) {
+  const safeUser = session?.user || {};
   const nav = getNav(session.role);
   return (
     <>
@@ -193,8 +186,8 @@ export function Sidebar({ session, view, setView, onLogout, open, onClose }) {
         </div>
         <div className="sidebar-user">
           <div className="sidebar-user-role">{session.role === "lead" ? "Team Lead" : "Team Member"}</div>
-          <div className="sidebar-user-name">{session.user.first_name} {session.user.last_name || ""}</div>
-          <div className="sidebar-user-email">{session.user.email}</div>
+          <div className="sidebar-user-name">{safeUser.first_name || "User"} {safeUser.last_name || ""}</div>
+          <div className="sidebar-user-email">{safeUser.email || "-"}</div>
         </div>
         <nav className="sidebar-nav">
           {nav.map((item) => {
@@ -361,26 +354,6 @@ export function CalendarWidget({ now }) {
   );
 }
 
-export function EntryTrendChart({ trend }) {
-  return (
-    <div className="chart-shell">
-      <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={trend}>
-          <CartesianGrid stroke="#d8e1ec" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatShortDateLabel} stroke="#708198" tickLine={false} axisLine={false} />
-          <YAxis allowDecimals={false} stroke="#708198" tickLine={false} axisLine={false} />
-          <Tooltip
-            formatter={(value) => [`${value} entries`, "Entries"]}
-            labelFormatter={(label) => formatLongDate(new Date(label))}
-            contentStyle={{ borderRadius: "16px", border: "1px solid #d8e1ec", boxShadow: "0 18px 36px rgba(15, 23, 42, 0.12)" }}
-          />
-          <Line type="monotone" dataKey="count" stroke="#0f62fe" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 export function OverdueCard({ title, items, emptyCopy, onOpen, dateKey }) {
   return (
     <div className="mini-list-card">
@@ -399,18 +372,39 @@ export function OverdueCard({ title, items, emptyCopy, onOpen, dateKey }) {
   );
 }
 
-export function DataTable({ columns, rows, emptyMessage }) {
+export function DataTable({ columns, rows, emptyMessage, pageSize = 7 }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [rows, currentPage, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows, pageSize]);
+
   if (!rows.length) return <div className="empty-box">{emptyMessage}</div>;
   return (
-    <div className="table-wrap">
-      <table className="data-table">
-        <thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={row.id || index}>{columns.map((column) => <td key={column.key}>{column.render(row)}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="table-block">
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={row.id || `${currentPage}-${index}`}>{columns.map((column) => <td key={column.key}>{column.render(row)}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 ? <div className="table-pagination">
+        <span>Page {currentPage} of {totalPages}</span>
+        <div className="action-row">
+          <button className="secondary-button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
+          <button className="secondary-button" disabled={currentPage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
+        </div>
+      </div> : null}
     </div>
   );
 }
@@ -435,7 +429,9 @@ export function DashboardPage({ title, copy, now, stats, trend, overdueCards, in
       <StatGrid items={stats} />
       <div className="content-grid">
         <SectionCard icon={FileSpreadsheet} title="Entry trend" copy="Seven-day activity movement for quick operational visibility.">
-          <EntryTrendChart trend={trend.map((item) => ({ ...item, count: item.count || 0 }))} />
+          <Suspense fallback={<div className="chart-shell chart-loading"><div className="loading-spinner" /></div>}>
+            <EntryTrendChart trend={trend.map((item) => ({ ...item, count: item.count || 0 }))} />
+          </Suspense>
         </SectionCard>
         <div className="mini-list-grid">{overdueCards}</div>
       </div>

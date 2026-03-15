@@ -10,12 +10,20 @@ export default defineConfig({
     rollupOptions: {
       output: {
         entryFileNames: "app.js",
-        chunkFileNames: "app.js",
+        chunkFileNames: "[name]-[hash].js",
         assetFileNames: (assetInfo) => {
           if (assetInfo.names?.some((name) => name.endsWith(".css"))) {
             return "app.css";
           }
           return "assets/[name][extname]";
+        },
+        manualChunks(id) {
+          if (id.includes("node_modules/recharts")) return "charts";
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) return "react-vendor";
+          if (id.includes("node_modules/lucide-react")) return "icons";
+          if (id.includes("/src/ui/admin")) return "admin";
+          if (id.includes("/src/ui/member")) return "member";
+          return undefined;
         },
       },
     },

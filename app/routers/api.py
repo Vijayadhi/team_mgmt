@@ -444,7 +444,7 @@ async def build_member_dashboard_payload(
         cursor = db.daily_updates.find({"user_id": current_user["_id"]}).sort("date", -1).limit(10)
         recent_updates = [object_id_str(item) async for item in cursor]
     pending_requests: list[dict] = []
-    if section in {"dashboard", "requests"}:
+    if section in {"dashboard", "requests", "workspace"}:
         async for item in db.update_requests.find({"user_id": current_user["_id"], "status": "pending"}).sort("created_at", -1):
             leave = await db.leave_days.find_one({"user_id": current_user["_id"], "date": item["date"]})
             update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": item["date"]})
@@ -462,7 +462,7 @@ async def build_member_dashboard_payload(
         count = await db.daily_updates.count_documents({"user_id": current_user["_id"], "date": target_date})
         entry_trend.append({"date": target_date, "count": count})
 
-    missing_dates = await get_member_missing_dates(current_user["_id"]) if section in {"dashboard", "requests"} else []
+    missing_dates = await get_member_missing_dates(current_user["_id"]) if section in {"dashboard", "requests", "workspace"} else []
     todos = await build_member_todos(current_user["_id"]) if section in {"dashboard", "todo"} else []
     overdue_todos = [item for item in todos if item.get("deadline") and item["deadline"] < today and item.get("status") != "completed"][:5]
     assigned_tasks = await build_assigned_tasks_for_user(current_user) if section in {"dashboard", "tasks"} else []
@@ -477,7 +477,7 @@ async def build_member_dashboard_payload(
         "is_requesting_missing_day": is_requesting_missing_day,
         "recent_updates": recent_updates,
         "pending_requests": pending_requests,
-        "request_history": await get_member_request_history(current_user["_id"]) if section in {"dashboard", "requests"} else [],
+        "request_history": await get_member_request_history(current_user["_id"]) if section in {"dashboard", "requests", "workspace", "history"} else [],
         "total_entries": total_entries,
         "entry_trend": entry_trend,
         "missing_dates": missing_dates,
@@ -488,6 +488,65 @@ async def build_member_dashboard_payload(
         "overdue_tasks": overdue_tasks,
         "notifications": notifications,
         "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
+}
+
+
+@router.get("/member/daily-update-status")
+async def api_member_daily_update_status(request: Request, target_date: str):
+    current_user = await get_api_current_user(request, "member")
+    if not target_date or not is_valid_iso_date(target_date):
+        raise HTTPException(status_code=400, detail="A valid date is required.")
+
+    today = date.today().isoformat()
+    if target_date > today:
+        return {
+            "status": "future_invalid",
+            "message": "Future dates are not allowed.",
+            "target_date": target_date,
+        }
+
+    db = get_database()
+    existing_update = await db.daily_updates.find_one({"user_id": current_user["_id"], "date": target_date})
+    pending_request = await db.update_requests.find_one(
+        {"user_id": current_user["_id"], "date": target_date, "status": "pending"}
+    )
+    if pending_request:
+        return {
+            "status": "pending_request",
+            "message": "A request is already pending for this date.",
+            "target_date": target_date,
+            "request": object_id_str(pending_request),
+        }
+
+    if existing_update:
+        form_data = object_id_str(existing_update) or blank_member_form(target_date)
+        form_data["request_reason"] = ""
+        return {
+            "status": "existing_update_today" if target_date == today else "existing_update_past",
+            "message": "An update already exists for this date.",
+            "target_date": target_date,
+            "form_data": form_data,
+            "is_editing": True,
+            "is_requesting_missing_day": False,
+        }
+
+    if target_date == today:
+        return {
+            "status": "today_new",
+            "message": "You can create a new update for today.",
+            "target_date": target_date,
+            "form_data": blank_member_form(target_date),
+            "is_editing": False,
+            "is_requesting_missing_day": False,
+        }
+
+    return {
+        "status": "request_required",
+        "message": "Changing the date requires an approval request to the admin.",
+        "target_date": target_date,
+        "form_data": blank_member_form(target_date),
+        "is_editing": False,
+        "is_requesting_missing_day": True,
     }
 
 
@@ -1084,7 +1143,7 @@ async def api_save_daily_update(request: Request):
                 },
                 upsert=True,
             )
-            return {"ok": True, "message": "Late EOD request submitted for approval.", "next": {"view": "requests"}}
+            return {"ok": True, "message": "Late EOD request submitted for approval.", "next": {"view": "workspace"}}
 
         if not cleaned_plan:
             raise HTTPException(status_code=400, detail="Morning plan is required.")
@@ -1126,7 +1185,7 @@ async def api_save_daily_update(request: Request):
             },
             upsert=True,
         )
-        return {"ok": True, "message": "Missed-day request submitted for approval.", "next": {"view": "requests"}}
+        return {"ok": True, "message": "Missed-day request submitted for approval.", "next": {"view": "workspace"}}
 
     if existing:
         if cleaned_date != today:

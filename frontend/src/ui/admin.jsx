@@ -36,6 +36,26 @@ const emptyTaskForm = {
   proof: "",
 };
 
+function normalizeAdminData(payload = {}) {
+  return {
+    user: payload.user || {},
+    team_members: Array.isArray(payload.team_members) ? payload.team_members : [],
+    updates: Array.isArray(payload.updates) ? payload.updates : [],
+    reports: Array.isArray(payload.reports) ? payload.reports : [],
+    total_entries: Number(payload.total_entries || 0),
+    entry_trend: Array.isArray(payload.entry_trend) ? payload.entry_trend : [],
+    assigned_tasks: Array.isArray(payload.assigned_tasks) ? payload.assigned_tasks : [],
+    open_task_count: Number(payload.open_task_count || 0),
+    pending_requests: Array.isArray(payload.pending_requests) ? payload.pending_requests : [],
+    missing_days: Array.isArray(payload.missing_days) ? payload.missing_days : [],
+    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    unread_notifications: Number(payload.unread_notifications || 0),
+    filters: payload.filters || { member_name: "", update_date: "" },
+    week_start: payload.week_start || "",
+    week_end: payload.week_end || "",
+  };
+}
+
 function updateReportList(reportForm, setReportForm, key, index, field, value) {
   const rows = [...(reportForm[key] || [])];
   rows[index] = { ...rows[index], [field]: value };
@@ -205,12 +225,13 @@ function ReportsEditor({ reports, onOpen }) {
 }
 
 export function AdminApp({ session, pushToast, view, setView, onMenuToggle, taskFocusId, clearTaskFocus }) {
+  const safeUser = session?.user || {};
   const now = useClock();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [filters, setFilters] = useState({ member_name: "", update_date: "" });
-  const [teamForm, setTeamForm] = useState({ team_name: session.user.team_name || "" });
+  const [teamForm, setTeamForm] = useState({ team_name: safeUser.team_name || "" });
   const [memberForm, setMemberForm] = useState({ first_name: "", last_name: "", email: "" });
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [reportForm, setReportForm] = useState(null);
@@ -224,7 +245,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
       const params = new URLSearchParams();
       if (nextFilters.member_name) params.set("member_name", nextFilters.member_name);
       if (nextFilters.update_date) params.set("update_date", nextFilters.update_date);
-      const payload = await apiFetch(`/api/admin/dashboard?${params.toString()}`);
+      const payload = normalizeAdminData(await apiFetch(`/api/admin/dashboard?${params.toString()}`));
       setData(payload);
       setFilters(payload.filters || nextFilters);
       setTeamForm({ team_name: payload.user.team_name || "" });
@@ -272,27 +293,28 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
   };
 
   if (loading && !data) return <div className="loading-inline">Loading...</div>;
+  const dashboardData = normalizeAdminData(data);
 
   const stats = [
-    { icon: Bell, label: "Pending requests", value: data.pending_requests.length, note: "Awaiting approval" },
-    { icon: FileSpreadsheet, label: "Total entries", value: data.total_entries, note: "Tracked across the team" },
-    { icon: ClipboardList, label: "Open tasks", value: data.open_task_count, note: "Assigned and still active" },
+    { icon: Bell, label: "Pending requests", value: dashboardData.pending_requests.length, note: "Awaiting approval" },
+    { icon: FileSpreadsheet, label: "Total entries", value: dashboardData.total_entries, note: "Tracked across the team" },
+    { icon: ClipboardList, label: "Open tasks", value: dashboardData.open_task_count, note: "Assigned and still active" },
   ];
 
   let content = null;
   if (view === "dashboard") {
-    content = <DashboardPage title="Team dashboard" copy="Daily visibility for approvals, task flow, and entry activity without clutter." now={now} stats={stats} trend={data.entry_trend} overdueCards={[
-      <OverdueCard key="requests" title="Pending requests" items={data.pending_requests.slice(0, 5).map((item) => ({ ...item, title: item.member_name, date: item.date }))} emptyCopy="No pending requests right now." onOpen={() => setView("approvals")} dateKey="date" />,
-      <OverdueCard key="missing" title="Missing days" items={data.missing_days.slice(0, 5).map((item) => ({ id: `${item.member_id}-${item.date}`, title: item.member_name, date: item.date }))} emptyCopy="No missing day flags in the current window." onOpen={() => setView("compliance")} dateKey="date" />,
+    content = <DashboardPage title="Team dashboard" copy="Daily visibility for approvals, task flow, and entry activity without clutter." now={now} stats={stats} trend={dashboardData.entry_trend} overdueCards={[
+      <OverdueCard key="requests" title="Pending requests" items={dashboardData.pending_requests.slice(0, 5).map((item) => ({ ...item, title: item.member_name, date: item.date }))} emptyCopy="No pending requests right now." onOpen={() => setView("approvals")} dateKey="date" />,
+      <OverdueCard key="missing" title="Missing days" items={dashboardData.missing_days.slice(0, 5).map((item) => ({ id: `${item.member_id}-${item.date}`, title: item.member_name, date: item.date }))} emptyCopy="No missing day flags in the current window." onOpen={() => setView("compliance")} dateKey="date" />,
     ]} infoCards={[
-      { title: "Unread notifications", copy: data.unread_notifications ? `${data.unread_notifications} new updates need attention.` : "No unread notifications at the moment." },
-      { title: "Reports", copy: data.reports.length ? `${data.reports.length} finalized weekly reports are available.` : "No finalized weekly reports yet." },
-      { title: "Team coverage", copy: data.team_members.length ? `${data.team_members.length} members are mapped under this lead.` : "No team members have been added yet." },
+      { title: "Unread notifications", copy: dashboardData.unread_notifications ? `${dashboardData.unread_notifications} new updates need attention.` : "No unread notifications at the moment." },
+      { title: "Reports", copy: dashboardData.reports.length ? `${dashboardData.reports.length} finalized weekly reports are available.` : "No finalized weekly reports yet." },
+      { title: "Team coverage", copy: dashboardData.team_members.length ? `${dashboardData.team_members.length} members are mapped under this lead.` : "No team members have been added yet." },
     ]} />;
   } else if (view === "members") {
-    content = <SectionCard icon={Users} title="Team members" copy="Account management with visibility into missed updates and active tasks." tag={`${data.team_members.length} members`}>
+    content = <SectionCard icon={Users} title="Team members" copy="Account management with visibility into missed updates and active tasks." tag={`${dashboardData.team_members.length} members`}>
       <div className="split-panel">
-        <div className="panel-scroll"><DataTable emptyMessage="No team members found." rows={data.team_members} columns={[
+        <div className="panel-scroll"><DataTable emptyMessage="No team members found." rows={dashboardData.team_members} columns={[
           { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.first_name} {item.last_name || ""}</strong><span>{item.email}</span></div> },
           { key: "missed", label: "Missed Days", render: (item) => item.missing_day_count || 0 },
           { key: "tasks", label: "Open Tasks", render: (item) => item.open_task_count || 0 },
@@ -304,7 +326,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
     </SectionCard>;
   } else if (view === "tasks") {
     content = <div className="split-panel page-stack-mobile">
-      <SectionCard icon={ClipboardList} title="Assigned tasks" copy="Assign work to a member and manage follow-up from a single task table." tag={`${data.assigned_tasks.length} tasks`}><div className="panel-scroll"><DataTable emptyMessage="No tasks assigned yet." rows={data.assigned_tasks} columns={[
+      <SectionCard icon={ClipboardList} title="Assigned tasks" copy="Assign work to a member and manage follow-up from a single task table." tag={`${dashboardData.assigned_tasks.length} tasks`}><div className="panel-scroll"><DataTable emptyMessage="No tasks assigned yet." rows={dashboardData.assigned_tasks} columns={[
         { key: "title", label: "Title", render: (item) => <strong>{item.title}</strong> },
         { key: "member", label: "Assignee", render: (item) => item.assignee_name },
         { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
@@ -317,7 +339,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
           <button className="secondary-button" onClick={() => { setSelectedTaskId(""); setTaskForm(emptyTaskForm); }}>New task</button>
           {(selectedTask || taskForm.title || taskForm.assignee_id || taskForm.eta) ? <button className="secondary-button" onClick={() => setTaskForm(selectedTask ? { assignee_id: selectedTask.assignee_id, title: selectedTask.title || "", description: selectedTask.description || "", eta: selectedTask.eta || "", remarks: selectedTask.remarks || "", status: selectedTask.status || "todo", message: "", proof: "" } : emptyTaskForm)}>Reset form</button> : null}
         </div>
-        <TaskPanel task={selectedTask} members={data.team_members} form={taskForm} setForm={setTaskForm} working={working} onSave={() => run(() => selectedTask ? apiFetch(`/api/tasks/${selectedTask.id}`, { method: "POST", body: JSON.stringify(taskForm) }) : apiFetch("/api/admin/tasks", { method: "POST", body: JSON.stringify(taskForm) }), selectedTask ? "Task updated" : "Task assigned", async () => {
+        <TaskPanel task={selectedTask} members={dashboardData.team_members} form={taskForm} setForm={setTaskForm} working={working} onSave={() => run(() => selectedTask ? apiFetch(`/api/tasks/${selectedTask.id}`, { method: "POST", body: JSON.stringify(taskForm) }) : apiFetch("/api/admin/tasks", { method: "POST", body: JSON.stringify(taskForm) }), selectedTask ? "Task updated" : "Task assigned", async () => {
           if (!selectedTask) {
             setSelectedTaskId("");
             setTaskForm(emptyTaskForm);
@@ -334,7 +356,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
         <FormField label="Date"><input className="field-input" type="date" value={filters.update_date} onChange={(event) => setFilters({ ...filters, update_date: event.target.value })} /></FormField>
       </div>
       <div className="action-row"><button className="secondary-button" onClick={() => load(filters)}>Apply filter</button></div>
-      <div className="panel-scroll"><DataTable emptyMessage="No daily updates matched the current filter." rows={data.updates} columns={[
+      <div className="panel-scroll"><DataTable emptyMessage="No daily updates matched the current filter." rows={dashboardData.updates} columns={[
         { key: "date", label: "Date", render: (item) => item.date },
         { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
         { key: "plan", label: "Morning Plan", render: (item) => item.plan || "-" },
@@ -344,7 +366,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
       ]} /></div>
     </SectionCard>;
   } else if (view === "approvals") {
-    content = <SectionCard icon={CheckCircle2} title="Pending requests" copy="Review late EOD and missed-day requests before approving them."><div className="panel-scroll"><DataTable emptyMessage="No pending approval requests." rows={data.pending_requests} columns={[
+    content = <SectionCard icon={CheckCircle2} title="Pending requests" copy="Review late EOD and missed-day requests before approving them."><div className="panel-scroll"><DataTable emptyMessage="No pending approval requests." rows={dashboardData.pending_requests} columns={[
       { key: "date", label: "Date", render: (item) => item.date },
       { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
       { key: "type", label: "Request Type", render: (item) => prettifyStatus(item.request_type) },
@@ -356,15 +378,15 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
       { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="primary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/approve`, { method: "POST" }), "Request approved")}>Approve</button><button className="danger-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reject`, { method: "POST" }), "Request rejected")}>Reject</button><button className="secondary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reset`, { method: "POST" }), "Request reset")}>Reset</button></div> },
     ]} /></div></SectionCard>;
   } else if (view === "compliance") {
-    content = <SectionCard icon={ShieldAlert} title="Missing day tracker" copy="Track unresolved gaps and act on them quickly." tag={`${data.missing_days.length} records`}><div className="panel-scroll"><DataTable emptyMessage="No missing-day records in the active window." rows={data.missing_days} columns={[
+    content = <SectionCard icon={ShieldAlert} title="Missing day tracker" copy="Track unresolved gaps and act on them quickly." tag={`${dashboardData.missing_days.length} records`}><div className="panel-scroll"><DataTable emptyMessage="No missing-day records in the active window." rows={dashboardData.missing_days} columns={[
       { key: "date", label: "Date", render: (item) => item.date },
       { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
       { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="secondary-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/leave", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_date: item.date, reason: "Marked as leave by TL" }) }), "Leave marked")}>Mark leave</button><button className="danger-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/warning", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_date: item.date }) }), "Warning sent")}>Raise warning</button></div> },
     ]} /></div></SectionCard>;
   } else if (view === "reports") {
     content = <div className="page-stack">
-      <SectionCard icon={FileSpreadsheet} title="Generate weekly report" copy="Create a fresh weekly summary before editing and finalizing it."><div className="inline-form-row"><FormField label="Week start"><input className="field-input" type="date" value={data.week_start} onChange={(event) => setData({ ...data, week_start: event.target.value })} /></FormField><FormField label="Week end"><input className="field-input" type="date" value={data.week_end} onChange={(event) => setData({ ...data, week_end: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/reports/generate", { method: "POST", body: JSON.stringify({ week_start: data.week_start, week_end: data.week_end }) }), "Weekly report generated", async (result) => openReport(result.report_id))}>{working ? "Generating..." : "Generate report"}</button></div></SectionCard>
-      <ReportsEditor reports={data.reports} onOpen={openReport} />
+      <SectionCard icon={FileSpreadsheet} title="Generate weekly report" copy="Create a fresh weekly summary before editing and finalizing it."><div className="inline-form-row"><FormField label="Week start"><input className="field-input" type="date" value={dashboardData.week_start} onChange={(event) => setData({ ...dashboardData, week_start: event.target.value })} /></FormField><FormField label="Week end"><input className="field-input" type="date" value={dashboardData.week_end} onChange={(event) => setData({ ...dashboardData, week_end: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/reports/generate", { method: "POST", body: JSON.stringify({ week_start: dashboardData.week_start, week_end: dashboardData.week_end }) }), "Weekly report generated", async (result) => openReport(result.report_id))}>{working ? "Generating..." : "Generate report"}</button></div></SectionCard>
+      <ReportsEditor reports={dashboardData.reports} onOpen={openReport} />
       <ReportModal reportForm={reportForm} setReportForm={setReportForm} onClose={() => setReportForm(null)} reportBusy={reportBusy} onSave={async () => {
         setReportBusy(true);
         try { const result = await apiFetch(`/api/admin/reports/${reportForm.id}/save`, { method: "POST", body: JSON.stringify(reportForm) }); pushToast("success", "Report finalized", result.message); await load(filters, { silent: true }); window.open(result.download_url, "_blank", "noopener,noreferrer"); } catch (error) { pushToast("error", "Save failed", error.message); } finally { setReportBusy(false); }
@@ -381,8 +403,8 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
     <main className="workspace-main">
       <BusyOverlay show={working} label="Processing..." />
       <BusyOverlay show={reportBusy} label="Finalizing report..." />
-      <Header title="Admin workspace" copy="A focused lead console for people, compliance, tasks, and reporting." onMenuToggle={onMenuToggle} notifications={data.notifications || []} unreadCount={data.unread_notifications || 0} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
-      <Hero title={`${session.user.first_name} ${session.user.last_name || ""}`} copy="Run the team from a single dashboard with clean, operational views." meta={[{ label: "Team", value: session.user.team_name || "Team Daily Tracker" }, { label: "Email", value: session.user.email }]} />
+      <Header title="Admin workspace" copy="A focused lead console for people, compliance, tasks, and reporting." onMenuToggle={onMenuToggle} notifications={dashboardData.notifications} unreadCount={dashboardData.unread_notifications} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
+      <Hero title={`${safeUser.first_name || "Lead"} ${safeUser.last_name || ""}`} copy="Run the team from a single dashboard with clean, operational views." meta={[{ label: "Team", value: safeUser.team_name || "Team Daily Tracker" }, { label: "Email", value: safeUser.email || "-" }]} />
       {content}
     </main>
   );

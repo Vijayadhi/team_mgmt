@@ -5,6 +5,19 @@ import { LoadingScreen, Sidebar, ToastStack, apiFetch, useHashView, useToasts } 
 const AdminApp = lazy(() => import("./ui/admin").then((module) => ({ default: module.AdminApp })));
 const MemberApp = lazy(() => import("./ui/member").then((module) => ({ default: module.MemberApp })));
 
+function normalizeSession(payload = {}) {
+  return {
+    role: payload.role || "member",
+    app_title: payload.app_title || "iamneo | Team Daily Tracker",
+    user: payload.user || {
+      first_name: "",
+      last_name: "",
+      email: "",
+      team_name: "",
+    },
+  };
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 1180);
@@ -17,8 +30,9 @@ function App() {
     apiFetch("/api/session")
       .then((payload) => {
         if (!active) return;
-        setSession(payload);
-        document.title = payload.app_title;
+        const nextSession = normalizeSession(payload);
+        setSession(nextSession);
+        document.title = nextSession.app_title;
       })
       .catch(() => {
         window.location.href = "/login";
@@ -45,11 +59,12 @@ function App() {
   };
 
   if (!session) return <LoadingScreen />;
+  const safeSession = normalizeSession(session);
 
   return (
     <div className={`app-shell ${sidebarOpen ? "" : "app-shell-collapsed"}`}>
       <Sidebar
-        session={session}
+        session={safeSession}
         view={view}
         setView={setView}
         onLogout={logout}
@@ -60,7 +75,7 @@ function App() {
         <Suspense fallback={<LoadingScreen />}>
           {session.role === "lead" ? (
             <AdminApp
-              session={session}
+              session={safeSession}
               pushToast={pushToast}
               view={view}
               setView={setView}
@@ -70,7 +85,7 @@ function App() {
             />
           ) : (
             <MemberApp
-              session={session}
+              session={safeSession}
               pushToast={pushToast}
               view={view}
               setView={setView}

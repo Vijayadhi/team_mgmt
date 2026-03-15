@@ -27,39 +27,89 @@ import {
   useClock,
 } from "./common";
 
-function WorkspaceForm({ data, formState, setFormState, working, onSubmit, onReset }) {
+function normalizeMemberData(payload = {}) {
+  return {
+    user: payload.user || {},
+    today: payload.today || "",
+    form_data: payload.form_data || {},
+    is_editing: Boolean(payload.is_editing),
+    is_requesting_missing_day: Boolean(payload.is_requesting_missing_day),
+    recent_updates: Array.isArray(payload.recent_updates) ? payload.recent_updates : [],
+    pending_requests: Array.isArray(payload.pending_requests) ? payload.pending_requests : [],
+    request_history: Array.isArray(payload.request_history) ? payload.request_history : [],
+    total_entries: Number(payload.total_entries || 0),
+    entry_trend: Array.isArray(payload.entry_trend) ? payload.entry_trend : [],
+    missing_dates: Array.isArray(payload.missing_dates) ? payload.missing_dates : [],
+    missing_day_count: Number(payload.missing_day_count || 0),
+    todos: Array.isArray(payload.todos) ? payload.todos : [],
+    overdue_todos: Array.isArray(payload.overdue_todos) ? payload.overdue_todos : [],
+    assigned_tasks: Array.isArray(payload.assigned_tasks) ? payload.assigned_tasks : [],
+    overdue_tasks: Array.isArray(payload.overdue_tasks) ? payload.overdue_tasks : [],
+    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    unread_notifications: Number(payload.unread_notifications || 0),
+  };
+}
+
+function blankWorkspaceForm(targetDate) {
+  return {
+    date: targetDate || "",
+    plan: "",
+    eta: "",
+    client_name: "",
+    extra_work: "",
+    challenges: "",
+    proof_of_work: "",
+    request_reason: "",
+    is_corporate: false,
+    is_university: false,
+  };
+}
+
+function WorkspaceForm({ data, formState, setFormState, working, onSubmit, onReset, onDateChange }) {
+  const safeFormState = formState || {
+    date: data.today || "",
+    plan: "",
+    eta: "",
+    client_name: "",
+    extra_work: "",
+    challenges: "",
+    proof_of_work: "",
+    request_reason: "",
+    is_corporate: false,
+    is_university: false,
+  };
   return (
     <SectionCard
       icon={FolderClock}
       title={data.is_requesting_missing_day ? "Missed day request" : data.is_editing ? "End-of-day update" : "Morning entry"}
-      copy="The form only shows the fields required for the current stage."
-      tag={formState.date}
+      copy="A lightweight daily update form that switches to approval mode only when the date changes."
+      tag={safeFormState.date}
     >
-      {data.is_editing ? <div className="summary-box"><strong>Morning entry summary</strong><p>Plan: {formState.plan || "-"}</p><p>ETA: {formState.eta || "-"}</p><p>Client: {formState.client_name || "-"}</p></div> : null}
-      <div className="form-grid">
+      {data.is_editing ? <div className="summary-box simple-summary"><strong>Morning entry summary</strong><p>Plan: {safeFormState.plan || "-"}</p><p>ETA: {safeFormState.eta || "-"}</p><p>Client: {safeFormState.client_name || "-"}</p></div> : null}
+      <div className="form-grid compact-form-grid">
         {!data.is_editing ? (
           <>
-            <FormField label="Date"><input className="field-input" type="date" value={formState.date} onChange={(event) => setFormState({ ...formState, date: event.target.value })} /></FormField>
-            <FormField label="Morning plan"><textarea className="field-input field-textarea" value={formState.plan} onChange={(event) => setFormState({ ...formState, plan: event.target.value })} /></FormField>
-            <FormField label="ETA"><input className="field-input" value={formState.eta} onChange={(event) => setFormState({ ...formState, eta: event.target.value })} /></FormField>
-            <FormField label="Client"><input className="field-input" value={formState.client_name} onChange={(event) => setFormState({ ...formState, client_name: event.target.value })} /></FormField>
+            <FormField label="Date"><input className="field-input" type="date" value={safeFormState.date} onChange={(event) => onDateChange ? onDateChange(event.target.value) : setFormState({ ...safeFormState, date: event.target.value })} /></FormField>
+            <FormField label="Morning plan"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.plan} onChange={(event) => setFormState({ ...safeFormState, plan: event.target.value })} /></FormField>
+            <FormField label="ETA"><input className="field-input" value={safeFormState.eta} onChange={(event) => setFormState({ ...safeFormState, eta: event.target.value })} /></FormField>
+            <FormField label="Client"><input className="field-input" value={safeFormState.client_name} onChange={(event) => setFormState({ ...safeFormState, client_name: event.target.value })} /></FormField>
             <FormField label="Category">
               <div className="checkbox-row">
-                <label className="checkbox-pill"><input type="checkbox" checked={!!formState.is_corporate} onChange={(event) => setFormState({ ...formState, is_corporate: event.target.checked })} /><span>Corporate</span></label>
-                <label className="checkbox-pill"><input type="checkbox" checked={!!formState.is_university} onChange={(event) => setFormState({ ...formState, is_university: event.target.checked })} /><span>University</span></label>
+                <label className="checkbox-pill"><input type="checkbox" checked={!!safeFormState.is_corporate} onChange={(event) => setFormState({ ...safeFormState, is_corporate: event.target.checked })} /><span>Corporate</span></label>
+                <label className="checkbox-pill"><input type="checkbox" checked={!!safeFormState.is_university} onChange={(event) => setFormState({ ...safeFormState, is_university: event.target.checked })} /><span>University</span></label>
               </div>
             </FormField>
           </>
         ) : null}
         {(data.is_editing || data.is_requesting_missing_day) ? (
           <>
-            <FormField label="Extra work"><textarea className="field-input field-textarea" value={formState.extra_work} onChange={(event) => setFormState({ ...formState, extra_work: event.target.value })} /></FormField>
-            <FormField label="Challenges"><textarea className="field-input field-textarea" value={formState.challenges} onChange={(event) => setFormState({ ...formState, challenges: event.target.value })} /></FormField>
-            <FormField label="Proof of work"><textarea className="field-input field-textarea" value={formState.proof_of_work} onChange={(event) => setFormState({ ...formState, proof_of_work: event.target.value })} /></FormField>
+            <FormField label="Extra work"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.extra_work} onChange={(event) => setFormState({ ...safeFormState, extra_work: event.target.value })} /></FormField>
+            <FormField label="Challenges"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.challenges} onChange={(event) => setFormState({ ...safeFormState, challenges: event.target.value })} /></FormField>
+            <FormField label="Proof of work"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.proof_of_work} onChange={(event) => setFormState({ ...safeFormState, proof_of_work: event.target.value })} /></FormField>
           </>
         ) : null}
-        {(data.is_requesting_missing_day || (data.is_editing && formState.date < data.today)) ? (
-          <FormField label="Reason for late submission"><textarea className="field-input field-textarea" value={formState.request_reason} onChange={(event) => setFormState({ ...formState, request_reason: event.target.value })} /></FormField>
+        {(data.is_requesting_missing_day || (data.is_editing && safeFormState.date < data.today)) ? (
+          <FormField label="Reason for late submission"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.request_reason} onChange={(event) => setFormState({ ...safeFormState, request_reason: event.target.value })} /></FormField>
         ) : null}
       </div>
       <div className="action-row">
@@ -140,11 +190,11 @@ function TaskActivity({ activities }) {
 }
 
 export function MemberApp({ session, pushToast, view, setView, onMenuToggle, taskFocusId, clearTaskFocus }) {
+  const safeUser = session?.user || {};
   const now = useClock();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
-  const [requestDate, setRequestDate] = useState("");
   const [formState, setFormState] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [todoFilters, setTodoFilters] = useState({ deadline_from: "", deadline_to: "", completion: "" });
@@ -159,7 +209,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       if (params.edit_date) search.set("edit_date", params.edit_date);
       if (params.request_date) search.set("request_date", params.request_date);
       search.set("section", params.section || view || "dashboard");
-      const payload = await apiFetch(`/api/member/dashboard?${search.toString()}`);
+      const payload = normalizeMemberData(await apiFetch(`/api/member/dashboard?${search.toString()}`));
       setData(payload);
       setFormState({ ...(payload.form_data || {}), date: payload.form_data?.date || payload.today });
       if (taskFocusId) {
@@ -201,41 +251,116 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
   const handleNotificationOpen = async (item) => {
     try { await apiFetch(`/api/notifications/${item.id}/read`, { method: "POST" }); } catch {}
     if (item.meta?.task_id) setSelectedTaskId(item.meta.task_id);
-    setView(item.link?.includes("tasks") ? "tasks" : item.link?.includes("requests") ? "requests" : "dashboard");
+    setView(item.link?.includes("tasks") ? "tasks" : item.link?.includes("requests") ? "workspace" : "dashboard");
     await refreshNotifications();
   };
 
+  const handleWorkspaceDateChange = async (nextDate) => {
+    if (!nextDate) {
+      setFormState((current) => ({ ...(current || blankWorkspaceForm(dashboardData.today)), date: nextDate }));
+      return;
+    }
+    setWorking(true);
+    try {
+      const result = await apiFetch(`/api/member/daily-update-status?target_date=${encodeURIComponent(nextDate)}`);
+      if (result.status === "future_invalid") {
+        window.alert(result.message);
+        return;
+      }
+      if (result.status === "pending_request") {
+        window.alert("Request already pending for this date.");
+        return;
+      }
+      if (result.status === "existing_update_today" || result.status === "existing_update_past") {
+        const confirmed = window.confirm("This day already has updates. Do you want to edit them?");
+        if (!confirmed) {
+          return;
+        }
+        setData((current) => current ? {
+          ...current,
+          is_editing: true,
+          is_requesting_missing_day: false,
+          form_data: result.form_data,
+        } : current);
+        setFormState({ ...(result.form_data || blankWorkspaceForm(nextDate)), date: nextDate, request_reason: "" });
+        return;
+      }
+      if (result.status === "request_required") {
+        window.alert("For changing the date you need to raise a request to the admin.");
+        setData((current) => current ? {
+          ...current,
+          is_editing: false,
+          is_requesting_missing_day: true,
+          form_data: result.form_data,
+        } : current);
+        setFormState({ ...(result.form_data || blankWorkspaceForm(nextDate)), date: nextDate });
+        return;
+      }
+      setData((current) => current ? {
+        ...current,
+        is_editing: false,
+        is_requesting_missing_day: false,
+        form_data: result.form_data,
+      } : current);
+      setFormState({ ...(result.form_data || blankWorkspaceForm(nextDate)), date: nextDate });
+    } catch (error) {
+      pushToast("error", "Date check failed", error.message);
+    } finally {
+      setWorking(false);
+    }
+  };
+
   if (loading && !data) return <div className="loading-inline">Loading...</div>;
+  const dashboardData = normalizeMemberData(data);
 
   const stats = [
-    { icon: Bell, label: "Pending requests", value: data.pending_requests.length, note: "Awaiting TL review" },
-    { icon: FileSpreadsheet, label: "Total entries", value: data.total_entries, note: "Submitted updates" },
-    { icon: ShieldAlert, label: "Missed days", value: data.missing_day_count, note: "Last 30 workdays" },
+    { icon: Bell, label: "Pending requests", value: dashboardData.pending_requests.length, note: "Awaiting TL review" },
+    { icon: FileSpreadsheet, label: "Total entries", value: dashboardData.total_entries, note: "Submitted updates" },
+    { icon: ShieldAlert, label: "Missed days", value: dashboardData.missing_day_count, note: "Last 30 workdays" },
   ];
 
   let content = null;
   if (view === "dashboard") {
-    content = <DashboardPage title="Dashboard" copy="Current time, calendar, entry trend, and overdue work in one simple view." now={now} stats={stats} trend={data.entry_trend} overdueCards={[
-      <OverdueCard key="todo" title="Overdue todo" items={data.overdue_todos || []} emptyCopy="No overdue personal todo items." onOpen={() => setView("todo")} dateKey="deadline" />,
-      <OverdueCard key="tasks" title="Overdue assigned tasks" items={data.overdue_tasks || []} emptyCopy="No overdue assigned tasks." onOpen={(item) => { setSelectedTaskId(item.id); setView("tasks"); }} dateKey="eta" />,
+    content = <DashboardPage title="Dashboard" copy="Current time, calendar, entry trend, and overdue work in one simple view." now={now} stats={stats} trend={dashboardData.entry_trend} overdueCards={[
+      <OverdueCard key="todo" title="Overdue todo" items={dashboardData.overdue_todos} emptyCopy="No overdue personal todo items." onOpen={() => setView("todo")} dateKey="deadline" />,
+      <OverdueCard key="tasks" title="Overdue assigned tasks" items={dashboardData.overdue_tasks} emptyCopy="No overdue assigned tasks." onOpen={(item) => { setSelectedTaskId(item.id); setView("tasks"); }} dateKey="eta" />,
     ]} infoCards={[
-      { title: "Request status", copy: data.pending_requests.length ? `${data.pending_requests.length} request(s) are still pending.` : "No pending requests right now." },
-      { title: "Missed day tracking", copy: data.missing_day_count ? `${data.missing_day_count} day(s) still need backfill or leave handling.` : "No unresolved missed-day gaps." },
-      { title: "Assigned tasks", copy: data.assigned_tasks.length ? `${data.assigned_tasks.length} assigned task(s) are visible in your task board.` : "No assigned tasks at the moment." },
+      { title: "Request status", copy: dashboardData.pending_requests.length ? `${dashboardData.pending_requests.length} request(s) are still pending.` : "No pending requests right now." },
+      { title: "Missed day tracking", copy: dashboardData.missing_day_count ? `${dashboardData.missing_day_count} day(s) still need backfill or leave handling.` : "No unresolved missed-day gaps." },
+      { title: "Assigned tasks", copy: dashboardData.assigned_tasks.length ? `${dashboardData.assigned_tasks.length} assigned task(s) are visible in your task board.` : "No assigned tasks at the moment." },
     ]} />;
   } else if (view === "workspace") {
-    content = <WorkspaceForm data={data} formState={formState} setFormState={setFormState} working={working} onReset={async () => { setView("workspace"); await load({}, { silent: true }); }} onSubmit={async () => {
+    content = <div className="page-stack">
+      <WorkspaceForm data={dashboardData} formState={formState} setFormState={setFormState} working={working} onDateChange={handleWorkspaceDateChange} onReset={async () => {
+        setData((current) => current ? { ...current, is_editing: false, is_requesting_missing_day: false } : current);
+        setFormState(blankWorkspaceForm(dashboardData.today));
+        await load({ section: "workspace" }, { silent: true });
+      }} onSubmit={async () => {
       setWorking(true);
       try {
         const result = await apiFetch("/api/member/daily-update", { method: "POST", body: JSON.stringify({ entry_date: formState.date, plan: formState.plan, extra_work: formState.extra_work, challenges: formState.challenges, eta: formState.eta, proof_of_work: formState.proof_of_work, client_name: formState.client_name, request_reason: formState.request_reason, is_corporate: !!formState.is_corporate, is_university: !!formState.is_university }) });
         pushToast("success", "Saved", result.message);
         if (result.next?.edit_date) await load({ edit_date: result.next.edit_date, section: "workspace" }, { silent: true });
-        else if (result.next?.view === "requests") { setView("requests"); await load({ section: "requests" }, { silent: true }); }
+        else if (result.next?.view === "workspace") { await load({ section: "workspace" }, { silent: true }); }
         else { setView("history"); await load({ section: "history" }, { silent: true }); }
       } catch (error) { pushToast("error", "Save failed", error.message); } finally { setWorking(false); }
-    }} />;
+      }} />
+      <SectionCard icon={ShieldAlert} title="Date-aware request status" copy="Changing the date from today automatically switches this form into approval-request mode when needed.">
+        {dashboardData.pending_requests.length ? <div className="subtle-list">{dashboardData.pending_requests.slice(0, 6).map((item) => <span key={item.id} className="subtle-pill">{item.date} - {prettifyStatus(item.request_type)} pending</span>)}</div> : <div className="empty-box compact-empty">No pending date-change requests.</div>}
+      </SectionCard>
+      <SectionCard icon={FileSpreadsheet} title="Recent daily updates" copy="Your latest daily updates are shown here with pagination." tag={`${dashboardData.recent_updates.length} records`}>
+        <DataTable emptyMessage="No daily updates yet." rows={dashboardData.recent_updates} pageSize={7} columns={[
+          { key: "date", label: "Date", render: (item) => item.date },
+          { key: "plan", label: "Morning plan", render: (item) => item.plan || "-" },
+          { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
+          { key: "client", label: "Client", render: (item) => item.client_name || "-" },
+          { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
+          { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={async () => { setView("workspace"); await load({ edit_date: item.date, section: "workspace" }, { silent: true }); }}>Edit</button> },
+        ]} />
+      </SectionCard>
+    </div>;
   } else if (view === "todo") {
-    content = <TodoPage items={data.todos || []} filters={todoFilters} setFilters={setTodoFilters} form={todoForm} setForm={setTodoForm} onApplyFilter={loadTodos} onSave={async () => {
+    content = <TodoPage items={dashboardData.todos} filters={todoFilters} setFilters={setTodoFilters} form={todoForm} setForm={setTodoForm} onApplyFilter={loadTodos} onSave={async () => {
       setWorking(true);
       try {
         await apiFetch(todoForm.id ? `/api/member/todos/${todoForm.id}` : "/api/member/todos", { method: "POST", body: JSON.stringify(todoForm) });
@@ -246,7 +371,7 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
     }} working={working} />;
   } else if (view === "tasks") {
     content = <div className="split-panel page-stack-mobile">
-      <SectionCard icon={ClipboardList} title="Assigned tasks" copy="Only tasks assigned to you are visible here."><div className="panel-scroll"><DataTable emptyMessage="No tasks assigned right now." rows={data.assigned_tasks} columns={[
+      <SectionCard icon={ClipboardList} title="Assigned tasks" copy="Only tasks assigned to you are visible here."><div className="panel-scroll"><DataTable emptyMessage="No tasks assigned right now." rows={dashboardData.assigned_tasks} columns={[
         { key: "title", label: "Title", render: (item) => <strong>{item.title}</strong> },
         { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
         { key: "status", label: "Status", render: (item) => <span className="status-chip status-info">{prettifyStatus(item.status)}</span> },
@@ -260,33 +385,13 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       }} />
     </div>;
   } else if (view === "history") {
-    content = <SectionCard icon={CalendarDays} title="History" copy="Recent entries with direct access to edit mode." tag={`${data.recent_updates.length} recent`}><DataTable emptyMessage="No entries yet. Start with a morning update." rows={data.recent_updates} columns={[
+    content = <SectionCard icon={CalendarDays} title="History" copy="Only the requests you raised are shown here." tag={`${dashboardData.request_history.length} requests`}><DataTable emptyMessage="No requests have been raised yet." rows={dashboardData.request_history} pageSize={7} columns={[
       { key: "date", label: "Date", render: (item) => item.date },
-      { key: "plan", label: "Morning plan", render: (item) => item.plan || "-" },
-      { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
-      { key: "client", label: "Client", render: (item) => item.client_name || "-" },
-      { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
-      { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={async () => { setView("workspace"); await load({ edit_date: item.date, section: "workspace" }, { silent: true }); }}>Edit</button> },
+      { key: "type", label: "Type", render: (item) => prettifyStatus(item.request_type) },
+      { key: "reason", label: "Reason", render: (item) => item.reason || "-" },
+      { key: "status", label: "Status", render: (item) => <span className={`status-chip ${item.status === "approved" ? "status-success" : item.status === "rejected" ? "status-danger" : "status-info"}`}>{prettifyStatus(item.status)}</span> },
+      { key: "reviewed", label: "Reviewed", render: (item) => item.reviewed_at ? formatDateTime(item.reviewed_at) : "-" },
     ]} /></SectionCard>;
-  } else if (view === "requests") {
-    content = <div className="page-stack">
-      <SectionCard icon={ShieldAlert} title="Raise missed-day request" copy="Use this only when a full earlier workday was not entered at all." tag={`${data.missing_day_count} missed days`}>
-        <div className="inline-form-row"><FormField label="Missing date"><input className="field-input" type="date" value={requestDate} onChange={(event) => setRequestDate(event.target.value)} /></FormField></div>
-        <div className="action-row"><button className="primary-button" onClick={async () => {
-          if (!requestDate) { pushToast("error", "Date required", "Choose the missed date first."); return; }
-          setView("workspace");
-          await load({ request_date: requestDate, section: "workspace" }, { silent: true });
-        }}>Open request form</button></div>
-        {data.missing_dates?.length ? <div className="subtle-list">{data.missing_dates.slice(0, 12).map((item) => <span key={item} className="subtle-pill">{item}</span>)}</div> : null}
-      </SectionCard>
-      <SectionCard icon={Bell} title="Request history" copy="Past approvals and rejections remain visible here."><div className="panel-scroll"><DataTable emptyMessage="No requests have been submitted yet." rows={data.request_history} columns={[
-        { key: "date", label: "Date", render: (item) => item.date },
-        { key: "type", label: "Type", render: (item) => prettifyStatus(item.request_type) },
-        { key: "reason", label: "Reason", render: (item) => item.reason || "-" },
-        { key: "status", label: "Status", render: (item) => <span className={`status-chip ${item.status === "approved" ? "status-success" : item.status === "rejected" ? "status-danger" : "status-info"}`}>{prettifyStatus(item.status)}</span> },
-        { key: "reviewed", label: "Reviewed", render: (item) => item.reviewed_at ? formatDateTime(item.reviewed_at) : "-" },
-      ]} /></div></SectionCard>
-    </div>;
   } else {
     content = <SectionCard icon={LockKeyhole} title="Password settings" copy="Update your login password from here.">
       <div className="inline-form-row">
@@ -304,8 +409,8 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
   return (
     <main className="workspace-main">
       <BusyOverlay show={working} label="Saving your update..." />
-      <Header title="Member workspace" copy="A clean, single-sidebar workspace for daily updates, todo tracking, requests, and assigned tasks." onMenuToggle={onMenuToggle} notifications={data.notifications || []} unreadCount={data.unread_notifications || 0} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
-      <Hero title={`${session.user.first_name} ${session.user.last_name || ""}`} copy="Simple views, clear tracking, and fast access to everything that needs action." meta={[{ label: "Pending requests", value: String(data.pending_requests.length) }, { label: "Missed days", value: String(data.missing_day_count) }]} />
+      <Header title="Member workspace" copy="A clean, single-sidebar workspace for daily updates, todo tracking, requests, and assigned tasks." onMenuToggle={onMenuToggle} notifications={dashboardData.notifications} unreadCount={dashboardData.unread_notifications} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
+      <Hero title={`${safeUser.first_name || "Member"} ${safeUser.last_name || ""}`} copy="Simple views, clear tracking, and fast access to everything that needs action." meta={[{ label: "Pending requests", value: String(dashboardData.pending_requests.length) }, { label: "Missed days", value: String(dashboardData.missing_day_count) }]} />
       {content}
     </main>
   );
