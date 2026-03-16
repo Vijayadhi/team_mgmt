@@ -43,3 +43,5 @@ async def ensure_indexes() -> None:
     await db.assigned_tasks.create_index([("assignee_id", 1), ("status", 1), ("eta", 1)])
     await db.assigned_tasks.create_index([("lead_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("is_read", 1), ("created_at", -1)])
+    await db.important_links.create_index([("lead_id", 1), ("created_at", -1)])
+    await db.important_links.create_index([("lead_id", 1), ("tag", 1), ("title", 1)])

@@ -202,6 +202,31 @@ async def build_notifications(user_id, limit: int = 8) -> list[dict[str, Any]]:
     return [serialize_notification(item) for item in items]
 
 
+def serialize_important_link(item: dict[str, Any]) -> dict[str, Any]:
+    data = object_id_str(item) or {}
+    for key in ("created_at", "updated_at"):
+        if isinstance(data.get(key), datetime):
+            data[key] = data[key].isoformat()
+    return data
+
+
+async def build_important_links(user: dict[str, Any]) -> list[dict[str, Any]]:
+    db = get_database()
+    lead_id = user["_id"] if user.get("role") == "lead" else user.get("lead_id")
+    if not lead_id:
+        return []
+    query: dict[str, Any] = {"lead_id": lead_id}
+    if user.get("role") == "lead":
+        query["$or"] = [
+            {"visibility": "all"},
+            {"created_by": user["_id"]},
+        ]
+    else:
+        query["visibility"] = "all"
+    rows = await db.important_links.find(query).sort("created_at", -1).to_list(length=500)
+    return [serialize_important_link(item) for item in rows]
+
+
 async def get_member_missing_dates(user_id, date_from: str, date_to: str) -> list[str]:
     missing_map = await get_missing_dates_by_user([user_id], date_from, date_to)
     return missing_map.get(str(user_id), [])
@@ -441,6 +466,7 @@ async def build_admin_dashboard_payload(
     notifications = await build_notifications(current_user["_id"])
     assigned_tasks = await build_assigned_tasks_for_user(current_user)
     open_tasks = [task for task in assigned_tasks if task.get("status") not in {"done", "completed"}]
+    important_links = await build_important_links(current_user)
 
     return {
         "user": object_id_str(current_user),
@@ -457,6 +483,7 @@ async def build_admin_dashboard_payload(
         "missed_days_to": missed_days_to,
         "notifications": notifications,
         "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
+        "important_links": important_links,
         "filters": {"member_name": member_name, "update_date": update_date, "update_types": update_types or []},
         "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
         "week_end": date.today().isoformat(),
@@ -527,7 +554,8 @@ async def build_member_dashboard_payload(
     overdue_todos = [item for item in todos if item.get("deadline") and item["deadline"] < today and item.get("status") != "completed"][:5]
     assigned_tasks = await build_assigned_tasks_for_user(current_user) if section in {"dashboard", "tasks"} else []
     overdue_tasks = [item for item in assigned_tasks if item.get("eta") and item["eta"] < today and item.get("status") not in {"done", "completed"}][:5]
-    notifications = await build_notifications(current_user["_id"]) if section in {"dashboard", "tasks", "requests", "workspace", "history", "todo"} else []
+    notifications = await build_notifications(current_user["_id"]) if section in {"dashboard", "tasks", "requests", "workspace", "history", "todo", "links"} else []
+    important_links = await build_important_links(current_user) if section in {"links"} else []
     return {
         "user": object_id_str(current_user),
         "today": today,
@@ -549,6 +577,7 @@ async def build_member_dashboard_payload(
         "overdue_tasks": overdue_tasks,
         "notifications": notifications,
         "unread_notifications": len([item for item in notifications if not item.get("is_read")]),
+        "important_links": important_links,
 }
 
 
@@ -654,6 +683,62 @@ async def api_mark_notification_read(request: Request, notification_id: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found.")
     return {"ok": True, "message": "Notification marked as read."}
+
+
+@router.get("/important-links")
+async def api_important_links(request: Request):
+    current_user = await get_api_current_user(request)
+    return {"items": await build_important_links(current_user)}
+
+
+@router.post("/important-links")
+async def api_create_important_link(request: Request):
+    current_user = await get_api_current_user(request)
+    payload = await request.json()
+    title = str(payload.get("title", "")).strip()
+    link_type = normalize_status(payload.get("link_type", "other"), {"one_drive", "other"}, "other")
+    visibility = normalize_status(payload.get("visibility", "all"), {"all", "private"}, "all")
+    link = str(payload.get("link", "")).strip()
+    tag = str(payload.get("tag", "")).strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required.")
+    if not link:
+        raise HTTPException(status_code=400, detail="Link is required.")
+
+    db = get_database()
+    lead_id = current_user["_id"] if current_user.get("role") == "lead" else current_user.get("lead_id")
+    if not lead_id:
+        raise HTTPException(status_code=400, detail="Lead mapping is missing for this user.")
+    inserted = await db.important_links.insert_one(
+        {
+            "lead_id": lead_id,
+            "created_by": current_user["_id"],
+            "title": title,
+            "link_type": link_type,
+            "visibility": visibility,
+            "link": link,
+            "tag": tag,
+            "created_at": iso_now(),
+            "updated_at": iso_now(),
+        }
+    )
+    return {"ok": True, "message": "Important link saved.", "item_id": str(inserted.inserted_id)}
+
+
+@router.post("/important-links/{link_id}/delete")
+async def api_delete_important_link(request: Request, link_id: str):
+    current_user = await get_api_current_user(request)
+    db = get_database()
+    query: dict[str, Any] = {"_id": parse_object_id(link_id)}
+    if current_user.get("role") == "lead":
+        query["lead_id"] = current_user["_id"]
+    else:
+        query["lead_id"] = current_user.get("lead_id")
+        query["created_by"] = current_user["_id"]
+    result = await db.important_links.delete_one(query)
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Important link not found.")
+    return {"ok": True, "message": "Important link deleted."}
 
 
 @router.post("/admin/team-name")
@@ -1025,7 +1110,7 @@ async def api_member_report_download(request: Request, report_id: str):
     lead = await db.users.find_one({"_id": report["lead_id"]})
     lead_name = full_name(lead)
     report.update(normalize_report_payload(report))
-    pdf_bytes = build_weekly_report_pdf(object_id_str(report) or {}, lead_name)
+    pdf_bytes = build_weekly_report_pdf(object_id_str(report) or {}, lead_name, (lead or {}).get("team_name", ""))
     filename = f"weekly-report-{report['week_start']}-to-{report['week_end']}.pdf"
     return Response(
         content=pdf_bytes,

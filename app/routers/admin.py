@@ -395,7 +395,7 @@ async def download_report(report_id: str, current_user: dict = Depends(get_curre
     report["bottleneck_risk"] = report.get("bottleneck_risk") or derive_bottleneck_risk(report.get("overall_challenges", ""))
     report.update(normalize_report_template(report))
     lead_name = f"{current_user['first_name']} {current_user['last_name']}".strip()
-    pdf_bytes = build_weekly_report_pdf(object_id_str(report), lead_name)
+    pdf_bytes = build_weekly_report_pdf(object_id_str(report), lead_name, current_user.get("team_name", ""))
     filename = f"weekly-report-{report['week_start']}-to-{report['week_end']}.pdf"
     return Response(
         content=pdf_bytes,

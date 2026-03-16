@@ -107,8 +107,9 @@ def _table(headers: list[str], rows: list[list[Any]], widths: list[float], style
     return table
 
 
-def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
+def build_weekly_report_pdf(report: dict[str, Any], lead_name: str, team_name: str = "") -> bytes:
     template = normalize_report_template(report)
+    report_title = f"{(team_name or 'Team').strip()} Weekly report"
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer,
@@ -117,11 +118,11 @@ def build_weekly_report_pdf(report: dict[str, Any], lead_name: str) -> bytes:
         rightMargin=0.42 * inch,
         topMargin=0.42 * inch,
         bottomMargin=0.42 * inch,
-        title="Weekly Lead Status Report",
+        title=report_title,
     )
     styles = _make_styles()
     story = [
-        Paragraph("Weekly Lead Status Report", styles["Title"]),
+        Paragraph(report_title, styles["Title"]),
         Spacer(1, 8),
         _kv_table(
             [

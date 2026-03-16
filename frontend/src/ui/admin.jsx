@@ -53,6 +53,7 @@ function normalizeAdminData(payload = {}) {
     open_task_count: Number(safePayload.open_task_count || 0),
     pending_requests: Array.isArray(safePayload.pending_requests) ? safePayload.pending_requests : [],
     missing_days: Array.isArray(safePayload.missing_days) ? safePayload.missing_days : [],
+    important_links: Array.isArray(safePayload.important_links) ? safePayload.important_links : [],
     notifications: Array.isArray(safePayload.notifications) ? safePayload.notifications : [],
     unread_notifications: Number(safePayload.unread_notifications || 0),
     missed_days_from: safePayload.missed_days_from || "",
@@ -118,6 +119,8 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [reportForm, setReportForm] = useState(null);
   const [reportBusy, setReportBusy] = useState(false);
+  const [linkForm, setLinkForm] = useState({ title: "", visibility: "all", link_type: "one_drive", link: "", tag: "" });
+  const [linkFilters, setLinkFilters] = useState({ added_date: "", title: "", tag: "" });
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedRequestIds, setSelectedRequestIds] = useState([]);
@@ -206,6 +209,14 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
       return matchesMember && matchesDate && matchesType;
     });
   }, [dashboardData.updates, filters]);
+  const filteredLinks = useMemo(() => dashboardData.important_links.filter((item) => {
+    const matchesDate = !linkFilters.added_date || (item.created_at || "").slice(0, 10) === linkFilters.added_date;
+    const titleQuery = linkFilters.title.trim().toLowerCase();
+    const tagQuery = linkFilters.tag.trim().toLowerCase();
+    const matchesTitle = !titleQuery || item.title?.toLowerCase().includes(titleQuery);
+    const matchesTag = !tagQuery || item.tag?.toLowerCase().includes(tagQuery);
+    return matchesDate && matchesTitle && matchesTag;
+  }), [dashboardData.important_links, linkFilters]);
 
   const removeMissingDatesFromState = (userId, dates) => {
     if (!userId || !dates?.length) return;
@@ -393,7 +404,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
     content = <div className="page-stack">
       <SectionCard icon={FileSpreadsheet} title="Generate weekly report" copy="Create a fresh weekly summary before editing and finalizing it."><div className="inline-form-row"><FormField label="Week start"><input className="field-input" type="date" value={dashboardData.week_start} onChange={(event) => setData({ ...dashboardData, week_start: event.target.value })} /></FormField><FormField label="Week end"><input className="field-input" type="date" value={dashboardData.week_end} onChange={(event) => setData({ ...dashboardData, week_end: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/reports/generate", { method: "POST", body: JSON.stringify({ week_start: dashboardData.week_start, week_end: dashboardData.week_end }) }), "Weekly report generated", async (result) => openReport(result.report_id))}>{working ? "Generating..." : "Generate report"}</button></div></SectionCard>
       <Suspense fallback={<div className="loading-inline">Loading reports...</div>}>
-        <ReportsEditor reports={dashboardData.reports} onOpen={openReport} onDelete={(reportId) => run(() => apiFetch(`/api/admin/reports/${reportId}/delete`, { method: "POST" }), "Report deleted", async () => {
+        <ReportsEditor reportTitle={`${dashboardData.user?.team_name || "Team"} Weekly report`} reports={dashboardData.reports} onOpen={openReport} onDelete={(reportId) => run(() => apiFetch(`/api/admin/reports/${reportId}/delete`, { method: "POST" }), "Report deleted", async () => {
           if (reportForm?.id === reportId) setReportForm(null);
         })} icon={FileSpreadsheet} />
         <ReportModal reportForm={reportForm} setReportForm={setReportForm} onClose={() => setReportForm(null)} reportBusy={reportBusy} onSave={async () => {
@@ -401,6 +412,48 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
           try { const result = await apiFetch(`/api/admin/reports/${reportForm.id}/save`, { method: "POST", body: JSON.stringify(reportForm) }); pushToast("success", "Report finalized", result.message); await load({ silent: true }); window.open(result.download_url, "_blank", "noopener,noreferrer"); } catch (error) { pushToast("error", "Save failed", error.message); } finally { setReportBusy(false); }
         }} />
       </Suspense>
+    </div>;
+  } else if (view === "links") {
+    content = <div className="page-stack">
+      <SectionCard icon={FileSpreadsheet} title="Add important link" copy="Store team-useful links with a clear title, type, and tag.">
+        <div className="form-grid">
+          <FormField label="Title"><input className="field-input" value={linkForm.title} onChange={(event) => setLinkForm({ ...linkForm, title: event.target.value })} /></FormField>
+          <FormField label="Visibility">
+            <select className="field-input" value={linkForm.visibility} onChange={(event) => setLinkForm({ ...linkForm, visibility: event.target.value })}>
+              <option value="all">All</option>
+              <option value="private">Private</option>
+            </select>
+          </FormField>
+          <FormField label="Link type">
+            <select className="field-input" value={linkForm.link_type} onChange={(event) => setLinkForm({ ...linkForm, link_type: event.target.value })}>
+              <option value="one_drive">One Drive</option>
+              <option value="other">Other</option>
+            </select>
+          </FormField>
+          <FormField label="Link"><input className="field-input" value={linkForm.link} onChange={(event) => setLinkForm({ ...linkForm, link: event.target.value })} /></FormField>
+          <FormField label="Tag"><input className="field-input" value={linkForm.tag} onChange={(event) => setLinkForm({ ...linkForm, tag: event.target.value })} /></FormField>
+        </div>
+        <div className="action-row">
+          <button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/important-links", { method: "POST", body: JSON.stringify(linkForm) }), "Link saved", async () => setLinkForm({ title: "", visibility: "all", link_type: "one_drive", link: "", tag: "" }))}>Save link</button>
+        </div>
+      </SectionCard>
+      <SectionCard icon={FileSpreadsheet} title="Important links" copy="Filter the stored links by date, title, or tag." tag={`${dashboardData.important_links.length} links`}>
+        <div className="inline-form-row">
+          <FormField label="Date added"><input className="field-input" type="date" value={linkFilters.added_date} onChange={(event) => setLinkFilters({ ...linkFilters, added_date: event.target.value })} /></FormField>
+          <FormField label="Title"><input className="field-input" value={linkFilters.title} onChange={(event) => setLinkFilters({ ...linkFilters, title: event.target.value })} /></FormField>
+          <FormField label="Tag"><input className="field-input" value={linkFilters.tag} onChange={(event) => setLinkFilters({ ...linkFilters, tag: event.target.value })} /></FormField>
+        </div>
+        <div className="action-row"><button className="secondary-button" onClick={() => setLinkFilters({ added_date: "", title: "", tag: "" })}>Clear filter</button></div>
+        <DataTable emptyMessage="No important links matched the current filter." rows={filteredLinks} pageSize={7} columns={[
+          { key: "created_at", label: "Date Added", render: (item) => formatDateTime(item.created_at) },
+          { key: "title", label: "Title", render: (item) => item.title || "-" },
+          { key: "visibility", label: "Visibility", render: (item) => prettifyStatus(item.visibility || "all") },
+          { key: "link_type", label: "Type", render: (item) => prettifyStatus(item.link_type || "-") },
+          { key: "tag", label: "Tag", render: (item) => item.tag || "-" },
+          { key: "link", label: "Link", render: (item) => <a className="secondary-link" href={item.link} target="_blank" rel="noreferrer">Open</a> },
+          { key: "actions", label: "Actions", render: (item) => <button className="danger-button" onClick={() => run(() => apiFetch(`/api/important-links/${item.id}/delete`, { method: "POST" }), "Link deleted")}>Delete</button> },
+        ]} />
+      </SectionCard>
     </div>;
   } else {
     content = <div className="page-stack">

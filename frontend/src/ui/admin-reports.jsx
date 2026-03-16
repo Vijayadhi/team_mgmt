@@ -15,10 +15,10 @@ function ReportTableEditor({ title, columns, rows, reportForm, setReportForm, da
   );
 }
 
-export function ReportsEditor({ reports, onOpen, onDelete, icon: Icon }) {
+export function ReportsEditor({ reports, onOpen, onDelete, icon: Icon, reportTitle = "Weekly report" }) {
   return (
     <SectionCard icon={Icon} title="Saved reports" copy="Open an existing report or download the finalized PDF.">
-      <div className="list-panel">{reports.length ? reports.map((report) => <div key={report.id} className="list-row-card"><div><strong>{report.week_start} to {report.week_end}</strong><span>{formatDateTime(report.generated_at)}</span></div><div className="action-row"><button className="secondary-button" onClick={() => onOpen(report.id)}>Open</button><a className="secondary-link" href={`/admin/reports/${report.id}/download?v=${encodeURIComponent(report.updated_at || report.generated_at || "")}`}>Download PDF</a>{onDelete ? <button className="danger-button" onClick={() => onDelete(report.id)}>Delete</button> : null}</div></div>) : <div className="empty-box">No finalized reports yet.</div>}</div>
+      <div className="list-panel">{reports.length ? reports.map((report) => <div key={report.id} className="list-row-card"><div><strong>{reportTitle}</strong><span>{report.week_start} to {report.week_end} · {formatDateTime(report.generated_at)}</span></div><div className="action-row"><button className="secondary-button" onClick={() => onOpen(report.id)}>Open</button><a className="secondary-link" href={`/admin/reports/${report.id}/download?v=${encodeURIComponent(report.updated_at || report.generated_at || "")}`}>Download PDF</a>{onDelete ? <button className="danger-button" onClick={() => onDelete(report.id)}>Delete</button> : null}</div></div>) : <div className="empty-box">No finalized reports yet.</div>}</div>
     </SectionCard>
   );
 }

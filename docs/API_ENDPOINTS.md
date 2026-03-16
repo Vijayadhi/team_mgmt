@@ -14,6 +14,15 @@ Notifications:
 - `POST /api/notifications/{notification_id}/read`
   Marks a notification as read.
 
+Important links:
+- `GET /api/important-links`
+  Returns the important links visible to the current user’s team.
+- `POST /api/important-links`
+  Body: `{ "title": "...", "visibility": "all|private", "link_type": "one_drive|other", "link": "...", "tag": "..." }`
+- `POST /api/important-links/{link_id}/delete`
+  Deletes a stored important link.
+  Members can delete only links they created. Leads can delete any team link.
+
 Lead dashboard and settings:
 - `GET /api/admin/dashboard`
   Returns the full lead dashboard payload.

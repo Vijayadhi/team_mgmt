@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Clock3,
   FileSpreadsheet,
+  Link2,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
@@ -27,6 +28,7 @@ export const ADMIN_NAV = [
   { key: "approvals", label: "Approvals", icon: CheckCircle2 },
   { key: "compliance", label: "Missing Days", icon: ShieldAlert },
   { key: "reports", label: "Reports", icon: FileSpreadsheet },
+  { key: "links", label: "Important Links", icon: Link2 },
   { key: "settings", label: "Settings", icon: LockKeyhole },
 ];
 
@@ -35,6 +37,7 @@ export const MEMBER_NAV = [
   { key: "workspace", label: "Daily Update", icon: FolderClock },
   { key: "todo", label: "Todo", icon: ListTodo },
   { key: "tasks", label: "Tasks", icon: ClipboardList },
+  { key: "links", label: "Important Links", icon: Link2 },
   { key: "history", label: "History", icon: CalendarDays },
   { key: "settings", label: "Settings", icon: LockKeyhole },
 ];

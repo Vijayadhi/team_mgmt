@@ -40,6 +40,7 @@ function normalizeMemberData(payload = {}) {
     recent_updates: Array.isArray(safePayload.recent_updates) ? safePayload.recent_updates : [],
     pending_requests: Array.isArray(safePayload.pending_requests) ? safePayload.pending_requests : [],
     request_history: Array.isArray(safePayload.request_history) ? safePayload.request_history : [],
+    important_links: Array.isArray(safePayload.important_links) ? safePayload.important_links : [],
     total_entries: Number(safePayload.total_entries || 0),
     entry_trend: Array.isArray(safePayload.entry_trend) ? safePayload.entry_trend : [],
     missing_dates: Array.isArray(safePayload.missing_dates) ? safePayload.missing_dates : [],
@@ -317,6 +318,8 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [todoFilters, setTodoFilters] = useState({ deadline_from: "", deadline_to: "", completion: "" });
   const [todoForm, setTodoForm] = useState({ id: "", title: "", details: "", deadline: "", status: "pending" });
+  const [linkForm, setLinkForm] = useState({ title: "", visibility: "all", link_type: "one_drive", link: "", tag: "" });
+  const [linkFilters, setLinkFilters] = useState({ added_date: "", title: "", tag: "" });
   const [historyFilters, setHistoryFilters] = useState({ type: "all", from_date: "", to_date: "" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [taskForm, setTaskForm] = useState({ title: "", description: "", eta: "", remarks: "", status: "todo", message: "", proof: "" });
@@ -467,6 +470,14 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
     if (historyFilters.to_date && item.date > historyFilters.to_date) return false;
     return true;
   }), [dashboardData.request_history, historyFilters]);
+  const filteredLinks = useMemo(() => dashboardData.important_links.filter((item) => {
+    const matchesDate = !linkFilters.added_date || (item.created_at || "").slice(0, 10) === linkFilters.added_date;
+    const titleQuery = linkFilters.title.trim().toLowerCase();
+    const tagQuery = linkFilters.tag.trim().toLowerCase();
+    const matchesTitle = !titleQuery || item.title?.toLowerCase().includes(titleQuery);
+    const matchesTag = !tagQuery || item.tag?.toLowerCase().includes(tagQuery);
+    return matchesDate && matchesTitle && matchesTag;
+  }), [dashboardData.important_links, linkFilters]);
 
   const stats = [
     { icon: Bell, label: "Pending requests", value: dashboardData.pending_requests.length, note: "Awaiting TL review" },
@@ -541,6 +552,71 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
         setWorking(true);
         try { await apiFetch(`/api/tasks/${selectedTask.id}`, { method: "POST", body: JSON.stringify(taskForm) }); pushToast("success", "Task updated", "Your task update has been submitted."); await load({}, { silent: true }); } catch (error) { pushToast("error", "Task update failed", error.message); } finally { setWorking(false); }
       }} />
+    </div>;
+  } else if (view === "links") {
+    content = <div className="page-stack">
+      <SectionCard icon={FileSpreadsheet} title="Add important link" copy="Anyone can add links. Visibility controls whether the link is team-wide or private to the creator.">
+        <div className="form-grid">
+          <FormField label="Title"><input className="field-input" value={linkForm.title} onChange={(event) => setLinkForm({ ...linkForm, title: event.target.value })} /></FormField>
+          <FormField label="Visibility">
+            <select className="field-input" value={linkForm.visibility} onChange={(event) => setLinkForm({ ...linkForm, visibility: event.target.value })}>
+              <option value="all">All</option>
+              <option value="private">Private</option>
+            </select>
+          </FormField>
+          <FormField label="Link type">
+            <select className="field-input" value={linkForm.link_type} onChange={(event) => setLinkForm({ ...linkForm, link_type: event.target.value })}>
+              <option value="one_drive">One Drive</option>
+              <option value="other">Other</option>
+            </select>
+          </FormField>
+          <FormField label="Link"><input className="field-input" value={linkForm.link} onChange={(event) => setLinkForm({ ...linkForm, link: event.target.value })} /></FormField>
+          <FormField label="Tag"><input className="field-input" value={linkForm.tag} onChange={(event) => setLinkForm({ ...linkForm, tag: event.target.value })} /></FormField>
+        </div>
+        <div className="action-row">
+          <button className="primary-button" disabled={working} onClick={async () => {
+            setWorking(true);
+            try {
+              const result = await apiFetch("/api/important-links", { method: "POST", body: JSON.stringify(linkForm) });
+              pushToast("success", "Link saved", result.message);
+              setLinkForm({ title: "", visibility: "all", link_type: "one_drive", link: "", tag: "" });
+              await load({ section: "links" }, { silent: true });
+            } catch (error) {
+              pushToast("error", "Link save failed", error.message);
+            } finally {
+              setWorking(false);
+            }
+          }}>Save link</button>
+        </div>
+      </SectionCard>
+      <SectionCard icon={FileSpreadsheet} title="Important links" copy="Browse the visible team links and your own private links." tag={`${dashboardData.important_links.length} links`}>
+        <div className="inline-form-row">
+          <FormField label="Date added"><input className="field-input" type="date" value={linkFilters.added_date} onChange={(event) => setLinkFilters({ ...linkFilters, added_date: event.target.value })} /></FormField>
+          <FormField label="Title"><input className="field-input" value={linkFilters.title} onChange={(event) => setLinkFilters({ ...linkFilters, title: event.target.value })} /></FormField>
+          <FormField label="Tag"><input className="field-input" value={linkFilters.tag} onChange={(event) => setLinkFilters({ ...linkFilters, tag: event.target.value })} /></FormField>
+        </div>
+        <div className="action-row"><button className="secondary-button" onClick={() => setLinkFilters({ added_date: "", title: "", tag: "" })}>Clear filter</button></div>
+        <DataTable emptyMessage="No important links matched the current filter." rows={filteredLinks} pageSize={7} columns={[
+          { key: "created_at", label: "Date Added", render: (item) => formatDateTime(item.created_at) },
+          { key: "title", label: "Title", render: (item) => item.title || "-" },
+          { key: "visibility", label: "Visibility", render: (item) => prettifyStatus(item.visibility || "all") },
+          { key: "link_type", label: "Type", render: (item) => prettifyStatus(item.link_type || "-") },
+          { key: "tag", label: "Tag", render: (item) => item.tag || "-" },
+          { key: "link", label: "Link", render: (item) => <a className="secondary-link" href={item.link} target="_blank" rel="noreferrer">Open</a> },
+          { key: "actions", label: "Actions", render: (item) => item.created_by === dashboardData.user.id ? <button className="danger-button" onClick={async () => {
+            setWorking(true);
+            try {
+              const result = await apiFetch(`/api/important-links/${item.id}/delete`, { method: "POST" });
+              pushToast("success", "Link deleted", result.message);
+              await load({ section: "links" }, { silent: true });
+            } catch (error) {
+              pushToast("error", "Delete failed", error.message);
+            } finally {
+              setWorking(false);
+            }
+          }}>Delete</button> : "-" },
+        ]} />
+      </SectionCard>
     </div>;
   } else if (view === "history") {
     content = <div className="page-stack">
