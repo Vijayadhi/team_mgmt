@@ -27,6 +27,17 @@ def _make_styles():
     )
     styles.add(
         ParagraphStyle(
+            name="TableHeader",
+            parent=styles["BodyText"],
+            fontSize=7.6,
+            leading=9.0,
+            alignment=TA_LEFT,
+            textColor=colors.white,
+            fontName="Helvetica-Bold",
+        )
+    )
+    styles.add(
+        ParagraphStyle(
             name="SmallBody",
             parent=styles["BodyText"],
             fontSize=8.2,
@@ -74,7 +85,7 @@ def _kv_table(rows: list[list[Any]], widths: list[float], styles) -> Table:
 
 
 def _table(headers: list[str], rows: list[list[Any]], widths: list[float], styles) -> Table:
-    data = [[_p(header, styles["TinyBody"]) for header in headers]]
+    data = [[_p(header, styles["TableHeader"]) for header in headers]]
     for row in rows or [["-"] * len(headers)]:
         data.append([_p(cell, styles["TinyBody"]) for cell in row])
     table = Table(data, colWidths=widths, repeatRows=1)

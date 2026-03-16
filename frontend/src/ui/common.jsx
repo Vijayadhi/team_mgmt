@@ -141,7 +141,18 @@ export function LoadingScreen() {
 }
 
 export function BusyOverlay({ show, label = "Working..." }) {
-  if (!show) return null;
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!show) {
+      setVisible(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setVisible(true), 180);
+    return () => window.clearTimeout(timer);
+  }, [show]);
+
+  if (!visible) return null;
   return (
     <div className="busy-overlay" role="status" aria-live="polite">
       <div className="busy-card">
@@ -414,6 +425,26 @@ export function FormField({ label, children }) {
 }
 
 export function DashboardPage({ title, copy, now, stats, trend, overdueCards, infoCards }) {
+  const [chartReady, setChartReady] = useState(false);
+
+  useEffect(() => {
+    setChartReady(false);
+    let timeoutId = 0;
+    let idleId = 0;
+    const ready = () => setChartReady(true);
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(ready, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(ready, 250);
+    }
+    return () => {
+      if (idleId && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [trend]);
+
   return (
     <div className="page-stack">
       <SectionCard icon={LayoutDashboard} title={title} copy={copy}>
@@ -429,9 +460,11 @@ export function DashboardPage({ title, copy, now, stats, trend, overdueCards, in
       <StatGrid items={stats} />
       <div className="content-grid">
         <SectionCard icon={FileSpreadsheet} title="Entry trend" copy="Seven-day activity movement for quick operational visibility.">
-          <Suspense fallback={<div className="chart-shell chart-loading"><div className="loading-spinner" /></div>}>
-            <EntryTrendChart trend={trend.map((item) => ({ ...item, count: item.count || 0 }))} />
-          </Suspense>
+          {chartReady ? (
+            <Suspense fallback={<div className="chart-shell chart-loading"><div className="loading-spinner" /></div>}>
+              <EntryTrendChart trend={trend.map((item) => ({ ...item, count: item.count || 0 }))} />
+            </Suspense>
+          ) : <div className="chart-shell chart-loading"><div className="loading-spinner" /></div>}
         </SectionCard>
         <div className="mini-list-grid">{overdueCards}</div>
       </div>

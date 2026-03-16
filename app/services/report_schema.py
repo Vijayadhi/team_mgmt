@@ -45,17 +45,22 @@ def _engagement_level(challenges: str) -> str:
 def _client_summary(members_payload: list[dict[str, Any]]) -> str:
     clients = sorted(
         {
-            _text(entry.get("client_name"))
+            _text(entry.get("client_name")) or "Internal"
             for member in members_payload
             for entry in member.get("entries", [])
-            if _text(entry.get("client_name"))
         }
     )
     if not clients:
-        return "Internal / Not specified"
-    if len(clients) <= 3:
-        return " / ".join(clients)
-    return f"{clients[0]} / {clients[1]} / +{len(clients) - 2} more"
+        return "Internal"
+    return " / ".join(clients)
+
+
+def _delivery_mode_summary(entries: list[dict[str, Any]]) -> str:
+    modes = []
+    labels = {"wfh": "WFH", "client_place": "Client Place", "in_office": "In Office"}
+    for value in sorted({_text(entry.get("delivery_mode")).lower() for entry in entries if _text(entry.get("delivery_mode"))}):
+        modes.append(labels.get(value, value.replace("_", " ").title()))
+    return " / ".join(modes) if modes else "Not specified"
 
 
 def _category_label(entries: list[dict[str, Any]]) -> str:
@@ -240,10 +245,13 @@ def build_template_report(
         member_name = _text(member.get("member_name")) or "Team Member"
         entries = member.get("entries", [])
         summary_row = row_map.get(member_name, {})
+        batch_names = sorted({_text(entry.get("batch_name")) for entry in entries if _text(entry.get("batch_name"))})
+        track_names = sorted({_text(entry.get("track_name")) for entry in entries if _text(entry.get("track_name"))})
         client_location = ", ".join(
-            sorted({_text(entry.get("client_name")) for entry in entries if _text(entry.get("client_name"))})
-        ) or "Not specified"
-        batch_tech_stack = _category_label(entries)
+            sorted({_text(entry.get("client_name")) or "Internal" for entry in entries})
+        ) or "Internal"
+        batch_tech_stack = _join_parts(batch_names + track_names, fallback=_category_label(entries))
+        delivery_mode = _delivery_mode_summary(entries)
         sessions_completed = _join_parts(
             [
                 _text(summary_row.get("activity_summary")),
@@ -274,7 +282,7 @@ def build_template_report(
                 "batch_tech_stack": batch_tech_stack,
                 "planned_topics": next_plan or "Continue current delivery milestones.",
                 "planned_dates": next_week_window,
-                "delivery_mode": batch_tech_stack,
+                "delivery_mode": delivery_mode,
                 "preparation_activities": remarks or "Review materials and dependencies ahead of sessions.",
                 "availability_wfh": "Available",
                 "risks_dependencies": challenges or "No explicit risks logged.",

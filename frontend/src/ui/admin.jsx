@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CheckCircle2,
@@ -36,39 +36,46 @@ const emptyTaskForm = {
   proof: "",
 };
 
+const ReportsEditor = lazy(() => import("./admin-reports").then((module) => ({ default: module.ReportsEditor })));
+const ReportModal = lazy(() => import("./admin-reports").then((module) => ({ default: module.ReportModal })));
+const ADMIN_CACHE_KEY = "admin_dashboard_cache_v1";
+
 function normalizeAdminData(payload = {}) {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
   return {
-    user: payload.user || {},
-    team_members: Array.isArray(payload.team_members) ? payload.team_members : [],
-    updates: Array.isArray(payload.updates) ? payload.updates : [],
-    reports: Array.isArray(payload.reports) ? payload.reports : [],
-    total_entries: Number(payload.total_entries || 0),
-    entry_trend: Array.isArray(payload.entry_trend) ? payload.entry_trend : [],
-    assigned_tasks: Array.isArray(payload.assigned_tasks) ? payload.assigned_tasks : [],
-    open_task_count: Number(payload.open_task_count || 0),
-    pending_requests: Array.isArray(payload.pending_requests) ? payload.pending_requests : [],
-    missing_days: Array.isArray(payload.missing_days) ? payload.missing_days : [],
-    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
-    unread_notifications: Number(payload.unread_notifications || 0),
-    filters: payload.filters || { member_name: "", update_date: "" },
-    week_start: payload.week_start || "",
-    week_end: payload.week_end || "",
+    user: safePayload.user || {},
+    team_members: Array.isArray(safePayload.team_members) ? safePayload.team_members : [],
+    updates: Array.isArray(safePayload.updates) ? safePayload.updates : [],
+    reports: Array.isArray(safePayload.reports) ? safePayload.reports : [],
+    total_entries: Number(safePayload.total_entries || 0),
+    entry_trend: Array.isArray(safePayload.entry_trend) ? safePayload.entry_trend : [],
+    assigned_tasks: Array.isArray(safePayload.assigned_tasks) ? safePayload.assigned_tasks : [],
+    open_task_count: Number(safePayload.open_task_count || 0),
+    pending_requests: Array.isArray(safePayload.pending_requests) ? safePayload.pending_requests : [],
+    missing_days: Array.isArray(safePayload.missing_days) ? safePayload.missing_days : [],
+    notifications: Array.isArray(safePayload.notifications) ? safePayload.notifications : [],
+    unread_notifications: Number(safePayload.unread_notifications || 0),
+    missed_days_from: safePayload.missed_days_from || "",
+    missed_days_to: safePayload.missed_days_to || "",
+    filters: safePayload.filters || { member_name: "", update_date: "", update_types: [] },
+    week_start: safePayload.week_start || "",
+    week_end: safePayload.week_end || "",
   };
 }
 
-function updateReportList(reportForm, setReportForm, key, index, field, value) {
-  const rows = [...(reportForm[key] || [])];
-  rows[index] = { ...rows[index], [field]: value };
-  setReportForm({ ...reportForm, [key]: rows });
+function readAdminCache() {
+  try {
+    const raw = window.sessionStorage.getItem(ADMIN_CACHE_KEY);
+    return raw ? normalizeAdminData(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
 }
 
-function ReportTableEditor({ title, columns, rows, reportForm, setReportForm, dataKey, emptyLabel = "No rows available." }) {
-  return (
-    <div className="report-template-block">
-      <div className="report-template-title"><strong>{title}</strong></div>
-      {rows?.length ? <div className="table-wrap report-table-wrap"><table className="data-table report-edit-table"><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${dataKey}-${index}`}>{columns.map((column) => <td key={column.key}>{column.type === "checkbox" ? <label className="checkbox-pill"><input type="checkbox" checked={Boolean(row[column.key])} onChange={(event) => updateReportList(reportForm, setReportForm, dataKey, index, column.key, event.target.checked)} /><span>{row[column.key] ? "Yes" : "No"}</span></label> : column.multiline ? <textarea className="field-input field-textarea report-cell-textarea" value={row[column.key] || ""} onChange={(event) => updateReportList(reportForm, setReportForm, dataKey, index, column.key, event.target.value)} /> : <input className="field-input" value={row[column.key] || ""} onChange={(event) => updateReportList(reportForm, setReportForm, dataKey, index, column.key, event.target.value)} />}</td>)}</tr>)}</tbody></table></div> : <div className="empty-box compact-empty">{emptyLabel}</div>}
-    </div>
-  );
+function writeAdminCache(payload) {
+  try {
+    window.sessionStorage.setItem(ADMIN_CACHE_KEY, JSON.stringify(payload));
+  } catch {}
 }
 
 function TaskActivity({ activities }) {
@@ -97,158 +104,32 @@ function TaskPanel({ task, members, form, setForm, onSave, working }) {
   );
 }
 
-function ReportModal({ reportForm, setReportForm, onClose, onSave, reportBusy }) {
-  if (!reportForm?.id) return null;
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card modal-xl" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-head">
-          <div>
-            <strong>Report editor</strong>
-            <span>{reportForm.week_start} to {reportForm.week_end}</span>
-          </div>
-          <button className="secondary-button" onClick={onClose}>Close</button>
-        </div>
-        <div className="modal-body">
-          <div className="report-editor-stack template-editor">
-            <div className="report-template-block">
-              <div className="report-template-header-grid">
-                <FormField label="Client"><input className="field-input" value={reportForm.client_label || ""} onChange={(event) => setReportForm({ ...reportForm, client_label: event.target.value })} /></FormField>
-                <FormField label="Reporting week"><input className="field-input" value={`${reportForm.week_start} to ${reportForm.week_end}`} readOnly /></FormField>
-                <FormField label="Prepared by"><input className="field-input" value={reportForm.prepared_by || ""} onChange={(event) => setReportForm({ ...reportForm, prepared_by: event.target.value })} /></FormField>
-              </div>
-            </div>
-            <div className="report-summary-row">
-              <FormField label="1. Executive Summary"><textarea className="field-input field-textarea report-summary-textarea" value={reportForm.executive_summary || reportForm.team_summary || ""} onChange={(event) => setReportForm({ ...reportForm, executive_summary: event.target.value, team_summary: event.target.value })} /></FormField>
-            </div>
-            <ReportTableEditor title="2. Team Members - Last Week Summary (Actuals)" dataKey="last_week_rows" reportForm={reportForm} setReportForm={setReportForm} rows={reportForm.last_week_rows} columns={[
-              { key: "team_member", label: "Team Member" },
-              { key: "client_location", label: "Client / Location" },
-              { key: "batch_tech_stack", label: "Batch / Tech Stack" },
-              { key: "role", label: "Role" },
-              { key: "sessions_completed", label: "Sessions / Milestones Completed", multiline: true },
-              { key: "status", label: "Status" },
-              { key: "remarks", label: "Remarks", multiline: true },
-            ]} />
-            <ReportTableEditor title="2. Upcoming Week Plan (Commitments)" dataKey="upcoming_week_rows" reportForm={reportForm} setReportForm={setReportForm} rows={reportForm.upcoming_week_rows} columns={[
-              { key: "team_member", label: "Team Member" },
-              { key: "client_location", label: "Client / Location" },
-              { key: "batch_tech_stack", label: "Batch / Tech Stack" },
-              { key: "planned_topics", label: "Planned Topics / Milestones", multiline: true },
-              { key: "planned_dates", label: "Planned Dates" },
-              { key: "delivery_mode", label: "Delivery Mode" },
-              { key: "preparation_activities", label: "Preparation Activities", multiline: true },
-              { key: "availability_wfh", label: "Availability / WFH" },
-              { key: "risks_dependencies", label: "Risks / Dependencies", multiline: true },
-            ]} />
-            <ReportTableEditor title="3. Detailed Session Observations" dataKey="detailed_observations" reportForm={reportForm} setReportForm={setReportForm} rows={reportForm.detailed_observations} columns={[
-              { key: "batch_name", label: "Batch / Track" },
-              { key: "topics_covered", label: "Topics Covered", multiline: true },
-              { key: "delivery_quality", label: "Delivery Quality" },
-              { key: "learner_engagement", label: "Learner Engagement" },
-              { key: "pending_topics", label: "Pending Topics / Gaps", multiline: true },
-            ]} />
-            <div className="report-tail-row"><FormField label="4. Lead Activities (Current Week)"><textarea className="field-input field-textarea" value={reportForm.lead_activities || ""} onChange={(event) => setReportForm({ ...reportForm, lead_activities: event.target.value })} /></FormField></div>
-            <ReportTableEditor title="5. Bottlenecks / Risks Identified" dataKey="bottleneck_rows" reportForm={reportForm} setReportForm={setReportForm} rows={reportForm.bottleneck_rows} columns={[
-              { key: "risk", label: "Risk / Bottleneck", multiline: true },
-              { key: "impact", label: "Impact", multiline: true },
-              { key: "affected_batch_client", label: "Affected Batch / Client" },
-              { key: "owner", label: "Owner" },
-              { key: "mitigation_plan", label: "Mitigation Plan", multiline: true },
-              { key: "eta", label: "ETA" },
-            ]} />
-            <div className="report-template-grid">
-              <FormField label="6. Client Feedback"><textarea className="field-input field-textarea" value={reportForm.client_feedback || ""} onChange={(event) => setReportForm({ ...reportForm, client_feedback: event.target.value })} /></FormField>
-              <FormField label="Action Taken / Planned"><textarea className="field-input field-textarea" value={reportForm.client_action_taken || ""} onChange={(event) => setReportForm({ ...reportForm, client_action_taken: event.target.value })} /></FormField>
-              <FormField label="Feedback Status"><input className="field-input" value={reportForm.client_feedback_status || ""} onChange={(event) => setReportForm({ ...reportForm, client_feedback_status: event.target.value })} /></FormField>
-            </div>
-            <div className="report-template-grid">
-              <FormField label="7. Delivery & Assessment Plan"><textarea className="field-input field-textarea" value={reportForm.delivery_assessment_plan || reportForm.overall_next_week_plan || ""} onChange={(event) => setReportForm({ ...reportForm, delivery_assessment_plan: event.target.value, overall_next_week_plan: event.target.value })} /></FormField>
-              <FormField label="New Batch Kick-offs"><textarea className="field-input field-textarea" value={reportForm.new_batch_kickoffs || ""} onChange={(event) => setReportForm({ ...reportForm, new_batch_kickoffs: event.target.value })} /></FormField>
-              <FormField label="Re-attempts / Assessments"><textarea className="field-input field-textarea" value={reportForm.assessments_scheduled || ""} onChange={(event) => setReportForm({ ...reportForm, assessments_scheduled: event.target.value })} /></FormField>
-            </div>
-            <ReportTableEditor title="Readiness Checklist" dataKey="readiness_checklist_rows" reportForm={{ ...reportForm, readiness_checklist_rows: [
-              { id: "trainers_aligned", label: "Trainers aligned on pace and coverage", value: reportForm.readiness_checklist?.trainers_aligned },
-              { id: "tas_assigned", label: "TAs assigned and availability confirmed", value: reportForm.readiness_checklist?.tas_assigned },
-              { id: "environments_validated", label: "Environments and platforms validated", value: reportForm.readiness_checklist?.environments_validated },
-              { id: "question_banks_reviewed", label: "Question banks and demos reviewed", value: reportForm.readiness_checklist?.question_banks_reviewed },
-            ] }} setReportForm={(nextValue) => {
-              const checklistRows = nextValue.readiness_checklist_rows || [];
-              setReportForm({
-                ...reportForm,
-                readiness_checklist: {
-                  trainers_aligned: Boolean(checklistRows[0]?.value),
-                  tas_assigned: Boolean(checklistRows[1]?.value),
-                  environments_validated: Boolean(checklistRows[2]?.value),
-                  question_banks_reviewed: Boolean(checklistRows[3]?.value),
-                },
-              });
-            }} rows={[
-              { label: "Trainers aligned on pace and coverage", value: reportForm.readiness_checklist?.trainers_aligned },
-              { label: "TAs assigned and availability confirmed", value: reportForm.readiness_checklist?.tas_assigned },
-              { label: "Environments and platforms validated", value: reportForm.readiness_checklist?.environments_validated },
-              { label: "Question banks and demos reviewed", value: reportForm.readiness_checklist?.question_banks_reviewed },
-            ]} columns={[
-              { key: "label", label: "Checklist Item" },
-              { key: "value", label: "Ready", type: "checkbox" },
-            ]} />
-            <ReportTableEditor title="8. Action Items & Ownership" dataKey="action_items" reportForm={reportForm} setReportForm={setReportForm} rows={reportForm.action_items} columns={[
-              { key: "action_item", label: "Action Item", multiline: true },
-              { key: "owner", label: "Owner" },
-              { key: "priority", label: "Priority" },
-              { key: "target_date", label: "Target Date" },
-              { key: "status", label: "Status" },
-            ]} />
-            <div className="report-template-grid">
-              <FormField label="9. Remarks / Escalations"><textarea className="field-input field-textarea" value={reportForm.remarks_escalations || reportForm.bottleneck_risk || ""} onChange={(event) => setReportForm({ ...reportForm, remarks_escalations: event.target.value, bottleneck_risk: event.target.value })} /></FormField>
-              <FormField label="Overall Challenges"><textarea className="field-input field-textarea" value={reportForm.overall_challenges || ""} onChange={(event) => setReportForm({ ...reportForm, overall_challenges: event.target.value })} /></FormField>
-              <FormField label="Report Date"><input className="field-input" type="date" value={reportForm.report_date || ""} onChange={(event) => setReportForm({ ...reportForm, report_date: event.target.value })} /></FormField>
-              <FormField label="Report Prepared By"><input className="field-input" value={reportForm.report_prepared_by || ""} onChange={(event) => setReportForm({ ...reportForm, report_prepared_by: event.target.value })} /></FormField>
-            </div>
-          </div>
-        </div>
-        <div className="modal-actions">
-          <button className="primary-button" disabled={reportBusy} onClick={onSave}>{reportBusy ? "Saving..." : "Save and finalize"}</button>
-          {reportForm.download_url ? <a className="secondary-link" href={reportForm.download_url}>Download PDF</a> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReportsEditor({ reports, onOpen }) {
-  return (
-    <SectionCard icon={FileSpreadsheet} title="Saved reports" copy="Open an existing report or download the finalized PDF.">
-      <div className="list-panel">{reports.length ? reports.map((report) => <div key={report.id} className="list-row-card"><div><strong>{report.week_start} to {report.week_end}</strong><span>{formatDateTime(report.generated_at)}</span></div><div className="action-row"><button className="secondary-button" onClick={() => onOpen(report.id)}>Open</button><a className="secondary-link" href={`/admin/reports/${report.id}/download`}>Download PDF</a></div></div>) : <div className="empty-box">No finalized reports yet.</div>}</div>
-    </SectionCard>
-  );
-}
 
 export function AdminApp({ session, pushToast, view, setView, onMenuToggle, taskFocusId, clearTaskFocus }) {
   const safeUser = session?.user || {};
   const now = useClock();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(() => readAdminCache());
+  const [loading, setLoading] = useState(() => !readAdminCache());
   const [working, setWorking] = useState(false);
-  const [filters, setFilters] = useState({ member_name: "", update_date: "" });
+  const [filters, setFilters] = useState({ member_name: "", update_date: "", update_types: [] });
   const [teamForm, setTeamForm] = useState({ team_name: safeUser.team_name || "" });
+  const [missedDaysForm, setMissedDaysForm] = useState({ missed_days_from: "", missed_days_to: "" });
   const [memberForm, setMemberForm] = useState({ first_name: "", last_name: "", email: "" });
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [reportForm, setReportForm] = useState(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [selectedRequestIds, setSelectedRequestIds] = useState([]);
 
-  const load = async (nextFilters = filters, options = {}) => {
+  const load = async (options = {}) => {
     if (!options.silent || !data) setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (nextFilters.member_name) params.set("member_name", nextFilters.member_name);
-      if (nextFilters.update_date) params.set("update_date", nextFilters.update_date);
-      const payload = normalizeAdminData(await apiFetch(`/api/admin/dashboard?${params.toString()}`));
+      const payload = normalizeAdminData(await apiFetch("/api/admin/dashboard"));
       setData(payload);
-      setFilters(payload.filters || nextFilters);
+      writeAdminCache(payload);
       setTeamForm({ team_name: payload.user.team_name || "" });
+      setMissedDaysForm({ missed_days_from: payload.missed_days_from || "", missed_days_to: payload.missed_days_to || "" });
       if (taskFocusId) {
         setSelectedTaskId(taskFocusId);
         clearTaskFocus();
@@ -258,6 +139,22 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
 
   useEffect(() => { load(); }, []);
   useEffect(() => { if (taskFocusId) setSelectedTaskId(taskFocusId); }, [taskFocusId]);
+  useEffect(() => {
+    let timeoutId = 0;
+    let idleId = 0;
+    const preload = () => import("./admin-reports");
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(preload, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(preload, 300);
+    }
+    return () => {
+      if (idleId && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   const selectedTask = data?.assigned_tasks?.find((item) => item.id === selectedTaskId) || null;
   useEffect(() => {
@@ -276,7 +173,9 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
       const result = await requester();
       pushToast("success", title, result.message || "Done.");
       if (after) await after(result);
-      await load(filters, { silent: true });
+      setWorking(false);
+      load({ silent: true });
+      return;
     } catch (error) { pushToast("error", "Action failed", error.message); } finally { setWorking(false); }
   };
 
@@ -291,9 +190,77 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
     setView(item.link?.includes("tasks") ? "tasks" : item.link?.includes("requests") ? "approvals" : "dashboard");
     await refreshNotifications();
   };
+  useEffect(() => {
+    setSelectedRequestIds((current) => current.filter((id) => dashboardData.pending_requests.some((item) => item.id === id)));
+  }, [data]);
+
+  const dashboardData = normalizeAdminData(data);
+  const filteredUpdates = useMemo(() => {
+    const memberQuery = filters.member_name.trim().toLowerCase();
+    return dashboardData.updates.filter((item) => {
+      const matchesMember = !memberQuery
+        || item.member_name?.toLowerCase().includes(memberQuery)
+        || item.email?.toLowerCase().includes(memberQuery);
+      const matchesDate = !filters.update_date || item.date === filters.update_date;
+      const matchesType = !filters.update_types.length || filters.update_types.includes(item.update_type);
+      return matchesMember && matchesDate && matchesType;
+    });
+  }, [dashboardData.updates, filters]);
+
+  const removeMissingDatesFromState = (userId, dates) => {
+    if (!userId || !dates?.length) return;
+    const dateSet = new Set(dates);
+    setData((current) => {
+      if (!current) return current;
+      const nextPendingRequests = (current.pending_requests || []).filter(
+        (item) => !(String(item.user_id || item.member_id) === String(userId) && dateSet.has(item.date) && item.request_type === "missed_day")
+      );
+      const nextMissingDays = (current.missing_days || [])
+        .map((item) => {
+          if (String(item.member_id) !== String(userId)) return item;
+          const remainingDates = (item.missing_dates || []).filter((value) => !dateSet.has(value));
+          return { ...item, missing_dates: remainingDates, missing_count: remainingDates.length };
+        })
+        .filter((item) => (item.missing_count || 0) > 0);
+      const nextTeamMembers = (current.team_members || []).map((item) => {
+        if (String(item.id) !== String(userId)) return item;
+        const removedCount = (current.missing_days || []).find((row) => String(row.member_id) === String(userId))
+          ? Math.min(dates.length, Number(item.missing_day_count || 0))
+          : 0;
+        return { ...item, missing_day_count: Math.max(0, Number(item.missing_day_count || 0) - removedCount) };
+      });
+      return { ...current, pending_requests: nextPendingRequests, missing_days: nextMissingDays, team_members: nextTeamMembers };
+    });
+  };
+  const selectedPendingRequests = dashboardData.pending_requests.filter((item) => selectedRequestIds.includes(item.id));
+  const allPendingSelected = Boolean(dashboardData.pending_requests.length) && selectedRequestIds.length === dashboardData.pending_requests.length;
+
+  const runBulkRequestAction = async (action) => {
+    if (!selectedPendingRequests.length) {
+      pushToast("error", "No requests selected", "Select at least one request first.");
+      return;
+    }
+    setWorking(true);
+    try {
+      for (const item of selectedPendingRequests) {
+        await apiFetch(`/api/admin/requests/${item.id}/${action}`, { method: "POST" });
+        if (action === "approve" && item.request_type === "missed_day") {
+          removeMissingDatesFromState(item.user_id || item.member_id, [item.date]);
+        }
+      }
+      pushToast("success", "Bulk action completed", `${selectedPendingRequests.length} request(s) updated.`);
+      setSelectedRequestIds([]);
+      setWorking(false);
+      load({ silent: true });
+      return;
+    } catch (error) {
+      pushToast("error", "Bulk action failed", error.message);
+    } finally {
+      setWorking(false);
+    }
+  };
 
   if (loading && !data) return <div className="loading-inline">Loading...</div>;
-  const dashboardData = normalizeAdminData(data);
 
   const stats = [
     { icon: Bell, label: "Pending requests", value: dashboardData.pending_requests.length, note: "Awaiting approval" },
@@ -305,7 +272,7 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
   if (view === "dashboard") {
     content = <DashboardPage title="Team dashboard" copy="Daily visibility for approvals, task flow, and entry activity without clutter." now={now} stats={stats} trend={dashboardData.entry_trend} overdueCards={[
       <OverdueCard key="requests" title="Pending requests" items={dashboardData.pending_requests.slice(0, 5).map((item) => ({ ...item, title: item.member_name, date: item.date }))} emptyCopy="No pending requests right now." onOpen={() => setView("approvals")} dateKey="date" />,
-      <OverdueCard key="missing" title="Missing days" items={dashboardData.missing_days.slice(0, 5).map((item) => ({ id: `${item.member_id}-${item.date}`, title: item.member_name, date: item.date }))} emptyCopy="No missing day flags in the current window." onOpen={() => setView("compliance")} dateKey="date" />,
+      <OverdueCard key="missing" title="Missing days" items={dashboardData.missing_days.slice(0, 5).map((item) => ({ id: item.member_id, title: item.member_name, date: `${item.missing_count} missed` }))} emptyCopy="No missing day flags in the current window." onOpen={() => setView("compliance")} dateKey="date" />,
     ]} infoCards={[
       { title: "Unread notifications", copy: dashboardData.unread_notifications ? `${dashboardData.unread_notifications} new updates need attention.` : "No unread notifications at the moment." },
       { title: "Reports", copy: dashboardData.reports.length ? `${dashboardData.reports.length} finalized weekly reports are available.` : "No finalized weekly reports yet." },
@@ -355,46 +322,90 @@ export function AdminApp({ session, pushToast, view, setView, onMenuToggle, task
         <FormField label="Member or email"><input className="field-input" value={filters.member_name} onChange={(event) => setFilters({ ...filters, member_name: event.target.value })} /></FormField>
         <FormField label="Date"><input className="field-input" type="date" value={filters.update_date} onChange={(event) => setFilters({ ...filters, update_date: event.target.value })} /></FormField>
       </div>
-      <div className="action-row"><button className="secondary-button" onClick={() => load(filters)}>Apply filter</button></div>
-      <div className="panel-scroll"><DataTable emptyMessage="No daily updates matched the current filter." rows={dashboardData.updates} columns={[
+      <FormField label="Update type">
+        <div className="checkbox-row">
+          {[["regular", "Regular"], ["missed_eod", "Missed EOD"], ["missed_day", "Missed day"]].map(([value, label]) => (
+            <label key={value} className="checkbox-pill">
+              <input
+                type="checkbox"
+                checked={filters.update_types.includes(value)}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    update_types: event.target.checked
+                      ? [...current.update_types, value]
+                      : current.update_types.filter((item) => item !== value),
+                  }))
+                }
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      </FormField>
+      <div className="action-row"><button className="secondary-button" onClick={() => setFilters({ member_name: "", update_date: "", update_types: [] })}>Clear filter</button></div>
+      <div className="panel-scroll"><DataTable emptyMessage="No daily updates matched the current filter." rows={filteredUpdates} columns={[
         { key: "date", label: "Date", render: (item) => item.date },
         { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
+        { key: "type", label: "Update Type", render: (item) => <span className="status-chip status-info">{prettifyStatus(item.update_type)}</span> },
         { key: "plan", label: "Morning Plan", render: (item) => item.plan || "-" },
         { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
+        { key: "delivery_mode", label: "Delivery", render: (item) => prettifyStatus(item.delivery_mode || "-") },
+        { key: "batch_name", label: "Batch", render: (item) => item.batch_name || "-" },
+        { key: "track_name", label: "Track", render: (item) => item.track_name || "-" },
         { key: "client", label: "Client", render: (item) => item.client_name || "-" },
         { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
       ]} /></div>
     </SectionCard>;
   } else if (view === "approvals") {
-    content = <SectionCard icon={CheckCircle2} title="Pending requests" copy="Review late EOD and missed-day requests before approving them."><div className="panel-scroll"><DataTable emptyMessage="No pending approval requests." rows={dashboardData.pending_requests} columns={[
+    content = <SectionCard icon={CheckCircle2} title="Pending requests" copy="Review late EOD and missed-day requests before approving them.">
+      <div className="action-row">
+        <button className="secondary-button" onClick={() => setSelectedRequestIds(allPendingSelected ? [] : dashboardData.pending_requests.map((item) => item.id))}>{allPendingSelected ? "Clear selection" : "Select all"}</button>
+        <button className="primary-button" disabled={!selectedRequestIds.length || working} onClick={() => runBulkRequestAction("approve")}>Approve selected</button>
+        <button className="danger-button" disabled={!selectedRequestIds.length || working} onClick={() => runBulkRequestAction("reject")}>Reject selected</button>
+        <button className="secondary-button" disabled={!selectedRequestIds.length || working} onClick={() => runBulkRequestAction("reset")}>Reset selected</button>
+      </div>
+      <div className="panel-scroll"><DataTable emptyMessage="No pending approval requests." rows={dashboardData.pending_requests} columns={[
+      { key: "select", label: <input type="checkbox" checked={allPendingSelected} onChange={(event) => setSelectedRequestIds(event.target.checked ? dashboardData.pending_requests.map((item) => item.id) : [])} />, render: (item) => <input type="checkbox" checked={selectedRequestIds.includes(item.id)} onChange={(event) => setSelectedRequestIds((current) => event.target.checked ? [...current, item.id] : current.filter((value) => value !== item.id))} /> },
       { key: "date", label: "Date", render: (item) => item.date },
       { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
       { key: "type", label: "Request Type", render: (item) => prettifyStatus(item.request_type) },
       { key: "plan", label: "Plan", render: (item) => item.plan || "-" },
       { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
+      { key: "delivery_mode", label: "Delivery", render: (item) => prettifyStatus(item.delivery_mode || "-") },
+      { key: "batch_name", label: "Batch", render: (item) => item.batch_name || "-" },
+      { key: "track_name", label: "Track", render: (item) => item.track_name || "-" },
       { key: "client", label: "Client", render: (item) => item.client_name || "-" },
       { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
       { key: "reason", label: "Reason", render: (item) => item.reason || "-" },
-      { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="primary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/approve`, { method: "POST" }), "Request approved")}>Approve</button><button className="danger-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reject`, { method: "POST" }), "Request rejected")}>Reject</button><button className="secondary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reset`, { method: "POST" }), "Request reset")}>Reset</button></div> },
+      { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="primary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/approve`, { method: "POST" }), "Request approved", async () => {
+        if (item.request_type === "missed_day") removeMissingDatesFromState(item.user_id || item.member_id, [item.date]);
+      })}>Approve</button><button className="danger-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reject`, { method: "POST" }), "Request rejected")}>Reject</button><button className="secondary-button" onClick={() => run(() => apiFetch(`/api/admin/requests/${item.id}/reset`, { method: "POST" }), "Request reset")}>Reset</button></div> },
     ]} /></div></SectionCard>;
   } else if (view === "compliance") {
-    content = <SectionCard icon={ShieldAlert} title="Missing day tracker" copy="Track unresolved gaps and act on them quickly." tag={`${dashboardData.missing_days.length} records`}><div className="panel-scroll"><DataTable emptyMessage="No missing-day records in the active window." rows={dashboardData.missing_days} columns={[
-      { key: "date", label: "Date", render: (item) => item.date },
+    content = <SectionCard icon={ShieldAlert} title="Missing day tracker" copy={`Track unresolved gaps from ${dashboardData.missed_days_from || "-"} to ${dashboardData.missed_days_to || "-"}.`} tag={`${dashboardData.missing_days.length} members`}><div className="panel-scroll"><DataTable emptyMessage="No missing-day records in the active window." rows={dashboardData.missing_days} columns={[
       { key: "member", label: "Member", render: (item) => <div className="table-cell-stack"><strong>{item.member_name}</strong><span>{item.email}</span></div> },
-      { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="secondary-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/leave", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_date: item.date, reason: "Marked as leave by TL" }) }), "Leave marked")}>Mark leave</button><button className="danger-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/warning", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_date: item.date }) }), "Warning sent")}>Raise warning</button></div> },
+      { key: "missed_count", label: "Missed Count", render: (item) => item.missing_count || 0 },
+      { key: "missing_dates", label: "Missing Dates", render: (item) => item.missing_dates?.length ? item.missing_dates.join(", ") : "-" },
+      { key: "actions", label: "Actions", render: (item) => <div className="action-row"><button className="secondary-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/leave", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_dates: item.missing_dates, reason: "Marked as leave by TL" }) }), "Leave marked", async () => removeMissingDatesFromState(item.member_id, item.missing_dates || []))}>Mark leave</button><button className="danger-button" onClick={() => run(() => apiFetch("/api/admin/missing-days/warning", { method: "POST", body: JSON.stringify({ user_id: item.member_id, missing_dates: item.missing_dates }) }), "Warning sent")}>Raise warning</button></div> },
     ]} /></div></SectionCard>;
   } else if (view === "reports") {
     content = <div className="page-stack">
       <SectionCard icon={FileSpreadsheet} title="Generate weekly report" copy="Create a fresh weekly summary before editing and finalizing it."><div className="inline-form-row"><FormField label="Week start"><input className="field-input" type="date" value={dashboardData.week_start} onChange={(event) => setData({ ...dashboardData, week_start: event.target.value })} /></FormField><FormField label="Week end"><input className="field-input" type="date" value={dashboardData.week_end} onChange={(event) => setData({ ...dashboardData, week_end: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/reports/generate", { method: "POST", body: JSON.stringify({ week_start: dashboardData.week_start, week_end: dashboardData.week_end }) }), "Weekly report generated", async (result) => openReport(result.report_id))}>{working ? "Generating..." : "Generate report"}</button></div></SectionCard>
-      <ReportsEditor reports={dashboardData.reports} onOpen={openReport} />
-      <ReportModal reportForm={reportForm} setReportForm={setReportForm} onClose={() => setReportForm(null)} reportBusy={reportBusy} onSave={async () => {
-        setReportBusy(true);
-        try { const result = await apiFetch(`/api/admin/reports/${reportForm.id}/save`, { method: "POST", body: JSON.stringify(reportForm) }); pushToast("success", "Report finalized", result.message); await load(filters, { silent: true }); window.open(result.download_url, "_blank", "noopener,noreferrer"); } catch (error) { pushToast("error", "Save failed", error.message); } finally { setReportBusy(false); }
-      }} />
+      <Suspense fallback={<div className="loading-inline">Loading reports...</div>}>
+        <ReportsEditor reports={dashboardData.reports} onOpen={openReport} onDelete={(reportId) => run(() => apiFetch(`/api/admin/reports/${reportId}/delete`, { method: "POST" }), "Report deleted", async () => {
+          if (reportForm?.id === reportId) setReportForm(null);
+        })} icon={FileSpreadsheet} />
+        <ReportModal reportForm={reportForm} setReportForm={setReportForm} onClose={() => setReportForm(null)} reportBusy={reportBusy} onSave={async () => {
+          setReportBusy(true);
+          try { const result = await apiFetch(`/api/admin/reports/${reportForm.id}/save`, { method: "POST", body: JSON.stringify(reportForm) }); pushToast("success", "Report finalized", result.message); await load({ silent: true }); window.open(result.download_url, "_blank", "noopener,noreferrer"); } catch (error) { pushToast("error", "Save failed", error.message); } finally { setReportBusy(false); }
+        }} />
+      </Suspense>
     </div>;
   } else {
     content = <div className="page-stack">
       <SectionCard icon={Users} title="Team identity" copy="Control the team name displayed throughout the workspace."><FormField label="Team name"><input className="field-input" value={teamForm.team_name} onChange={(event) => setTeamForm({ team_name: event.target.value })} /></FormField><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/team-name", { method: "POST", body: JSON.stringify(teamForm) }), "Team updated")}>Update team name</button></div></SectionCard>
+      <SectionCard icon={ShieldAlert} title="Missed days date range" copy="Set the exact date window used for member missed-day counts and admin compliance tracking."><div className="inline-form-row"><FormField label="From date"><input className="field-input" type="date" value={missedDaysForm.missed_days_from} onChange={(event) => setMissedDaysForm({ ...missedDaysForm, missed_days_from: event.target.value })} /></FormField><FormField label="To date"><input className="field-input" type="date" value={missedDaysForm.missed_days_to} onChange={(event) => setMissedDaysForm({ ...missedDaysForm, missed_days_to: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/missed-days-range", { method: "POST", body: JSON.stringify(missedDaysForm) }), "Missed days window updated", async (result) => setMissedDaysForm({ missed_days_from: result.missed_days_from || "", missed_days_to: result.missed_days_to || "" }))}>Update range</button></div></SectionCard>
       <SectionCard icon={LockKeyhole} title="Lead password" copy="Keep the lead account secure."><div className="inline-form-row"><FormField label="Current password"><input className="field-input" type="password" value={passwordForm.current_password} onChange={(event) => setPasswordForm({ ...passwordForm, current_password: event.target.value })} /></FormField><FormField label="New password"><input className="field-input" type="password" value={passwordForm.new_password} onChange={(event) => setPasswordForm({ ...passwordForm, new_password: event.target.value })} /></FormField><FormField label="Confirm password"><input className="field-input" type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm({ ...passwordForm, confirm_password: event.target.value })} /></FormField></div><div className="action-row"><button className="primary-button" disabled={working} onClick={() => run(() => apiFetch("/api/admin/change-password", { method: "POST", body: JSON.stringify(passwordForm) }), "Password updated", async () => setPasswordForm({ current_password: "", new_password: "", confirm_password: "" }))}>Update password</button></div></SectionCard>
     </div>;
   }

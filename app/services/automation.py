@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from app.config import get_settings
 from app.database import get_database
 from app.services.email_service import send_email
+from app.services.missed_days import audit_missing_days
 
 
 AUTOMATION_RUN_HOUR = 0
@@ -105,47 +106,46 @@ async def process_automation_cycle() -> None:
                     if sent:
                         await mark_notification("missed_eod_reminder", member["_id"], lead["_id"], yesterday)
 
-            leave_recent = await db.leave_days.find(
-                {"user_id": member["_id"], "date": {"$in": [yesterday, day_before]}}
-            ).to_list(length=10)
-            leave_dates = {item["date"] for item in leave_recent}
-            missing_dates = []
-            for target_date in [day_before, yesterday]:
-                if target_date in leave_dates:
-                    continue
-                if await has_open_request(member["_id"], target_date):
-                    continue
-                update = await db.daily_updates.find_one({"user_id": member["_id"], "date": target_date})
-                if not update:
-                    missing_dates.append(target_date)
+    audit = await audit_missing_days(day_before, yesterday, send_notifications=False)
+    for item in audit["items"]:
+        missing_dates = item.get("missing_dates", [])
+        member_id = item.get("member_id")
+        lead_id = item.get("lead_id")
+        member_email = item.get("email")
+        lead_email = item.get("lead_email")
+        member_name = item.get("member_name", "Member")
+        lead_name = item.get("lead_name", "Lead")
+        if len(missing_dates) < 2 or not member_id or not lead_id:
+            continue
+        if await has_notification("two_day_missing_alert", member_id, yesterday):
+            continue
 
-            if len(missing_dates) == 2 and not await has_notification("two_day_missing_alert", member["_id"], yesterday):
-                member_sent = await send_email(
-                    subject=f"Strict warning: two consecutive missing updates ({day_before}, {yesterday})",
-                    recipients=[member["email"]],
-                    body=(
-                        f"Hello {member['first_name']},\n\n"
-                        f"You have missed daily updates for both {day_before} and {yesterday}. "
-                        "This is a strict warning. Submit the required requests immediately with valid reasons."
-                    ),
-                )
-                lead_sent = await send_email(
-                    subject=f"Two consecutive missing updates: {member['first_name']} {member.get('last_name', '')}".strip(),
-                    recipients=[lead["email"]],
-                    body=(
-                        f"Hello {lead['first_name']},\n\n"
-                        f"{member['first_name']} {member.get('last_name', '')} ({member['email']}) has no daily entry for {day_before} and {yesterday}.\n"
-                        "Please review the member status, mark leave if applicable, or send a warning mail from the dashboard."
-                    ),
-                )
-                if member_sent or lead_sent:
-                    await mark_notification(
-                        "two_day_missing_alert",
-                        member["_id"],
-                        lead["_id"],
-                        yesterday,
-                        {"missing_dates": missing_dates},
-                    )
+        member_sent = await send_email(
+            subject=f"Strict warning: two consecutive missing updates ({day_before}, {yesterday})",
+            recipients=[member_email] if member_email else [],
+            body=(
+                f"Hello {member_name},\n\n"
+                f"You have missed daily updates for both {day_before} and {yesterday}. "
+                "This is a strict warning. Submit the required requests immediately with valid reasons."
+            ),
+        )
+        lead_sent = await send_email(
+            subject=f"Two consecutive missing updates: {member_name}",
+            recipients=[lead_email] if lead_email else [],
+            body=(
+                f"Hello {lead_name},\n\n"
+                f"{member_name} ({member_email}) has no daily entry for {day_before} and {yesterday}.\n"
+                "Please review the member status, mark leave if applicable, or send a warning mail from the dashboard."
+            ),
+        )
+        if member_sent or lead_sent:
+            await mark_notification(
+                "two_day_missing_alert",
+                member_id,
+                lead_id,
+                yesterday,
+                {"missing_dates": missing_dates},
+            )
 
 
 async def should_run_today() -> bool:

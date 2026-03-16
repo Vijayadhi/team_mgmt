@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     smtp_from_email: str | None = Field(default=None, alias="SMTP_FROM_EMAIL")
     smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
     app_timezone: str = Field(default="Asia/Kolkata", alias="APP_TIMEZONE")
+    allowed_hosts: str = Field(default="*", alias="ALLOWED_HOSTS")
+    external_trigger_token: str | None = Field(default=None, alias="EXTERNAL_TRIGGER_TOKEN")
+    rate_limit_per_minute: int = Field(default=180, alias="RATE_LIMIT_PER_MINUTE")
+    auth_rate_limit_per_minute: int = Field(default=30, alias="AUTH_RATE_LIMIT_PER_MINUTE")
+    max_request_bytes: int = Field(default=1_048_576, alias="MAX_REQUEST_BYTES")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

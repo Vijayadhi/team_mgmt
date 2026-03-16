@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -27,27 +27,47 @@ import {
   useClock,
 } from "./common";
 
+const MEMBER_CACHE_KEY = "member_dashboard_cache_v1";
+
 function normalizeMemberData(payload = {}) {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
   return {
-    user: payload.user || {},
-    today: payload.today || "",
-    form_data: payload.form_data || {},
-    is_editing: Boolean(payload.is_editing),
-    is_requesting_missing_day: Boolean(payload.is_requesting_missing_day),
-    recent_updates: Array.isArray(payload.recent_updates) ? payload.recent_updates : [],
-    pending_requests: Array.isArray(payload.pending_requests) ? payload.pending_requests : [],
-    request_history: Array.isArray(payload.request_history) ? payload.request_history : [],
-    total_entries: Number(payload.total_entries || 0),
-    entry_trend: Array.isArray(payload.entry_trend) ? payload.entry_trend : [],
-    missing_dates: Array.isArray(payload.missing_dates) ? payload.missing_dates : [],
-    missing_day_count: Number(payload.missing_day_count || 0),
-    todos: Array.isArray(payload.todos) ? payload.todos : [],
-    overdue_todos: Array.isArray(payload.overdue_todos) ? payload.overdue_todos : [],
-    assigned_tasks: Array.isArray(payload.assigned_tasks) ? payload.assigned_tasks : [],
-    overdue_tasks: Array.isArray(payload.overdue_tasks) ? payload.overdue_tasks : [],
-    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
-    unread_notifications: Number(payload.unread_notifications || 0),
+    user: safePayload.user || {},
+    today: safePayload.today || "",
+    form_data: safePayload.form_data || {},
+    is_editing: Boolean(safePayload.is_editing),
+    is_requesting_missing_day: Boolean(safePayload.is_requesting_missing_day),
+    recent_updates: Array.isArray(safePayload.recent_updates) ? safePayload.recent_updates : [],
+    pending_requests: Array.isArray(safePayload.pending_requests) ? safePayload.pending_requests : [],
+    request_history: Array.isArray(safePayload.request_history) ? safePayload.request_history : [],
+    total_entries: Number(safePayload.total_entries || 0),
+    entry_trend: Array.isArray(safePayload.entry_trend) ? safePayload.entry_trend : [],
+    missing_dates: Array.isArray(safePayload.missing_dates) ? safePayload.missing_dates : [],
+    missing_day_count: Number(safePayload.missing_day_count || 0),
+    missed_days_from: safePayload.missed_days_from || "",
+    missed_days_to: safePayload.missed_days_to || "",
+    todos: Array.isArray(safePayload.todos) ? safePayload.todos : [],
+    overdue_todos: Array.isArray(safePayload.overdue_todos) ? safePayload.overdue_todos : [],
+    assigned_tasks: Array.isArray(safePayload.assigned_tasks) ? safePayload.assigned_tasks : [],
+    overdue_tasks: Array.isArray(safePayload.overdue_tasks) ? safePayload.overdue_tasks : [],
+    notifications: Array.isArray(safePayload.notifications) ? safePayload.notifications : [],
+    unread_notifications: Number(safePayload.unread_notifications || 0),
   };
+}
+
+function readMemberCache() {
+  try {
+    const raw = window.sessionStorage.getItem(MEMBER_CACHE_KEY);
+    return raw ? normalizeMemberData(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMemberCache(payload) {
+  try {
+    window.sessionStorage.setItem(MEMBER_CACHE_KEY, JSON.stringify(payload));
+  } catch {}
 }
 
 function blankWorkspaceForm(targetDate) {
@@ -55,6 +75,9 @@ function blankWorkspaceForm(targetDate) {
     date: targetDate || "",
     plan: "",
     eta: "",
+    delivery_mode: "",
+    batch_name: "",
+    track_name: "",
     client_name: "",
     extra_work: "",
     challenges: "",
@@ -70,6 +93,9 @@ function WorkspaceForm({ data, formState, setFormState, working, onSubmit, onRes
     date: data.today || "",
     plan: "",
     eta: "",
+    delivery_mode: "",
+    batch_name: "",
+    track_name: "",
     client_name: "",
     extra_work: "",
     challenges: "",
@@ -85,13 +111,23 @@ function WorkspaceForm({ data, formState, setFormState, working, onSubmit, onRes
       copy="A lightweight daily update form that switches to approval mode only when the date changes."
       tag={safeFormState.date}
     >
-      {data.is_editing ? <div className="summary-box simple-summary"><strong>Morning entry summary</strong><p>Plan: {safeFormState.plan || "-"}</p><p>ETA: {safeFormState.eta || "-"}</p><p>Client: {safeFormState.client_name || "-"}</p></div> : null}
+      {data.is_editing ? <div className="summary-box simple-summary"><strong>Morning entry summary</strong><p>Plan: {safeFormState.plan || "-"}</p><p>ETA: {safeFormState.eta || "-"}</p><p>Delivery mode: {prettifyStatus(safeFormState.delivery_mode || "-")}</p><p>Batch: {safeFormState.batch_name || "-"}</p><p>Track: {safeFormState.track_name || "-"}</p><p>Client: {safeFormState.client_name || "-"}</p></div> : null}
       <div className="form-grid compact-form-grid">
         {!data.is_editing ? (
           <>
             <FormField label="Date"><input className="field-input" type="date" value={safeFormState.date} onChange={(event) => onDateChange ? onDateChange(event.target.value) : setFormState({ ...safeFormState, date: event.target.value })} /></FormField>
             <FormField label="Morning plan"><textarea className="field-input field-textarea compact-textarea" value={safeFormState.plan} onChange={(event) => setFormState({ ...safeFormState, plan: event.target.value })} /></FormField>
             <FormField label="ETA"><input className="field-input" value={safeFormState.eta} onChange={(event) => setFormState({ ...safeFormState, eta: event.target.value })} /></FormField>
+            <FormField label="Delivery mode">
+              <select className="field-input" value={safeFormState.delivery_mode || ""} onChange={(event) => setFormState({ ...safeFormState, delivery_mode: event.target.value })}>
+                <option value="">Select mode</option>
+                <option value="wfh">WFH</option>
+                <option value="client_place">Client place</option>
+                <option value="in_office">In office</option>
+              </select>
+            </FormField>
+            <FormField label="Batch name"><input className="field-input" value={safeFormState.batch_name || ""} onChange={(event) => setFormState({ ...safeFormState, batch_name: event.target.value })} /></FormField>
+            <FormField label="Track name"><input className="field-input" value={safeFormState.track_name || ""} onChange={(event) => setFormState({ ...safeFormState, track_name: event.target.value })} /></FormField>
             <FormField label="Client"><input className="field-input" value={safeFormState.client_name} onChange={(event) => setFormState({ ...safeFormState, client_name: event.target.value })} /></FormField>
             <FormField label="Category">
               <div className="checkbox-row">
@@ -189,18 +225,123 @@ function TaskActivity({ activities }) {
   return <div className="activity-list">{activities.map((item, index) => <div key={`${item.created_at}-${index}`} className="activity-item"><div className="activity-meta"><strong>{item.sender_name}</strong><span>{prettifyStatus(item.status)}</span><small>{formatDateTime(item.created_at)}</small></div><p>{item.message || "Status updated."}</p>{item.proof ? <div className="proof-box">{item.proof}</div> : null}</div>)}</div>;
 }
 
+function HistoryEditModal({ item, formState, setFormState, onClose, onSave, working, today }) {
+  if (!item) return null;
+  const isPastDate = item.date < today;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <strong>Edit daily update</strong>
+            <span>{item.date}</span>
+          </div>
+          <button className="secondary-button" onClick={onClose}>Close</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid compact-form-grid">
+            <FormField label="Morning plan"><textarea className="field-input field-textarea compact-textarea" value={formState.plan || ""} onChange={(event) => setFormState({ ...formState, plan: event.target.value })} /></FormField>
+            <FormField label="ETA"><input className="field-input" value={formState.eta || ""} onChange={(event) => setFormState({ ...formState, eta: event.target.value })} /></FormField>
+            <FormField label="Delivery mode">
+              <select className="field-input" value={formState.delivery_mode || ""} onChange={(event) => setFormState({ ...formState, delivery_mode: event.target.value })}>
+                <option value="">Select mode</option>
+                <option value="wfh">WFH</option>
+                <option value="client_place">Client place</option>
+                <option value="in_office">In office</option>
+              </select>
+            </FormField>
+            <FormField label="Batch name"><input className="field-input" value={formState.batch_name || ""} onChange={(event) => setFormState({ ...formState, batch_name: event.target.value })} /></FormField>
+            <FormField label="Track name"><input className="field-input" value={formState.track_name || ""} onChange={(event) => setFormState({ ...formState, track_name: event.target.value })} /></FormField>
+            <FormField label="Client"><input className="field-input" value={formState.client_name || ""} onChange={(event) => setFormState({ ...formState, client_name: event.target.value })} /></FormField>
+            <FormField label="Extra work"><textarea className="field-input field-textarea compact-textarea" value={formState.extra_work || ""} onChange={(event) => setFormState({ ...formState, extra_work: event.target.value })} /></FormField>
+            <FormField label="Challenges"><textarea className="field-input field-textarea compact-textarea" value={formState.challenges || ""} onChange={(event) => setFormState({ ...formState, challenges: event.target.value })} /></FormField>
+            <FormField label="Proof of work"><textarea className="field-input field-textarea compact-textarea" value={formState.proof_of_work || ""} onChange={(event) => setFormState({ ...formState, proof_of_work: event.target.value })} /></FormField>
+            {isPastDate ? <FormField label="Reason"><textarea className="field-input field-textarea compact-textarea" value={formState.request_reason || ""} onChange={(event) => setFormState({ ...formState, request_reason: event.target.value })} /></FormField> : null}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="primary-button" disabled={working} onClick={onSave}>{working ? "Saving..." : isPastDate ? "Submit for approval" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportPreviewModal({ report, onClose }) {
+  if (!report) return null;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card modal-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <strong>Weekly report</strong>
+            <span>{report.week_start} to {report.week_end}</span>
+          </div>
+          <div className="action-row">
+            {report.download_url ? <a className="secondary-link" href={report.download_url}>Download PDF</a> : null}
+            <button className="secondary-button" onClick={onClose}>Close</button>
+          </div>
+        </div>
+        <div className="modal-body">
+          <div className="report-editor-stack">
+            <div className="report-template-block">
+              <div className="report-template-title"><strong>Executive summary</strong></div>
+              <div>{report.executive_summary || report.team_summary || "-"}</div>
+            </div>
+            <div className="report-template-block">
+              <div className="report-template-title"><strong>Overall challenges</strong></div>
+              <div>{report.overall_challenges || "-"}</div>
+            </div>
+            <div className="report-template-block">
+              <div className="report-template-title"><strong>Bottleneck risk</strong></div>
+              <div>{report.bottleneck_risk || "-"}</div>
+            </div>
+            <div className="report-template-block">
+              <div className="report-template-title"><strong>Next week plan</strong></div>
+              <div>{report.overall_next_week_plan || report.delivery_assessment_plan || "-"}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MemberApp({ session, pushToast, view, setView, onMenuToggle, taskFocusId, clearTaskFocus }) {
   const safeUser = session?.user || {};
   const now = useClock();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(() => readMemberCache());
+  const [loading, setLoading] = useState(() => !readMemberCache());
   const [working, setWorking] = useState(false);
   const [formState, setFormState] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [todoFilters, setTodoFilters] = useState({ deadline_from: "", deadline_to: "", completion: "" });
   const [todoForm, setTodoForm] = useState({ id: "", title: "", details: "", deadline: "", status: "pending" });
+  const [historyFilters, setHistoryFilters] = useState({ type: "all", from_date: "", to_date: "" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [taskForm, setTaskForm] = useState({ title: "", description: "", eta: "", remarks: "", status: "todo", message: "", proof: "" });
+  const [historyEditItem, setHistoryEditItem] = useState(null);
+  const [historyEditForm, setHistoryEditForm] = useState(blankWorkspaceForm(""));
+
+  const persistWorkspaceDefaults = (nextForm) => {
+    const cookieValue = encodeURIComponent(JSON.stringify({
+      client_name: nextForm.client_name || "",
+      delivery_mode: nextForm.delivery_mode || "",
+      batch_name: nextForm.batch_name || "",
+      track_name: nextForm.track_name || "",
+    }));
+    document.cookie = `member_workspace_defaults=${cookieValue}; path=/; max-age=${60 * 60 * 24 * 90}; samesite=lax`;
+  };
+
+  const readWorkspaceDefaults = () => {
+    const match = document.cookie.split("; ").find((item) => item.startsWith("member_workspace_defaults="));
+    if (!match) return {};
+    try {
+      return JSON.parse(decodeURIComponent(match.split("=")[1] || ""));
+    } catch {
+      return {};
+    }
+  };
 
   const load = async (params = {}, options = {}) => {
     if (!options.silent || !data) setLoading(true);
@@ -211,7 +352,9 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       search.set("section", params.section || view || "dashboard");
       const payload = normalizeMemberData(await apiFetch(`/api/member/dashboard?${search.toString()}`));
       setData(payload);
-      setFormState({ ...(payload.form_data || {}), date: payload.form_data?.date || payload.today });
+      writeMemberCache(payload);
+      const cookieDefaults = readWorkspaceDefaults();
+      setFormState({ ...cookieDefaults, ...(payload.form_data || {}), date: payload.form_data?.date || payload.today });
       if (taskFocusId) {
         setSelectedTaskId(taskFocusId);
         clearTaskFocus();
@@ -312,11 +455,23 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
 
   if (loading && !data) return <div className="loading-inline">Loading...</div>;
   const dashboardData = normalizeMemberData(data);
+  const filteredHistoryUpdates = useMemo(() => dashboardData.recent_updates.filter((item) => {
+    if (historyFilters.type !== "all" && historyFilters.type !== "updates") return false;
+    if (historyFilters.from_date && item.date < historyFilters.from_date) return false;
+    if (historyFilters.to_date && item.date > historyFilters.to_date) return false;
+    return true;
+  }), [dashboardData.recent_updates, historyFilters]);
+  const filteredHistoryRequests = useMemo(() => dashboardData.request_history.filter((item) => {
+    if (historyFilters.type !== "all" && historyFilters.type !== "requests") return false;
+    if (historyFilters.from_date && item.date < historyFilters.from_date) return false;
+    if (historyFilters.to_date && item.date > historyFilters.to_date) return false;
+    return true;
+  }), [dashboardData.request_history, historyFilters]);
 
   const stats = [
     { icon: Bell, label: "Pending requests", value: dashboardData.pending_requests.length, note: "Awaiting TL review" },
     { icon: FileSpreadsheet, label: "Total entries", value: dashboardData.total_entries, note: "Submitted updates" },
-    { icon: ShieldAlert, label: "Missed days", value: dashboardData.missing_day_count, note: "Last 30 workdays" },
+    { icon: ShieldAlert, label: "Missed days", value: dashboardData.missing_day_count, note: `${dashboardData.missed_days_from || "-"} to ${dashboardData.missed_days_to || "-"}` },
   ];
 
   let content = null;
@@ -338,7 +493,8 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       }} onSubmit={async () => {
       setWorking(true);
       try {
-        const result = await apiFetch("/api/member/daily-update", { method: "POST", body: JSON.stringify({ entry_date: formState.date, plan: formState.plan, extra_work: formState.extra_work, challenges: formState.challenges, eta: formState.eta, proof_of_work: formState.proof_of_work, client_name: formState.client_name, request_reason: formState.request_reason, is_corporate: !!formState.is_corporate, is_university: !!formState.is_university }) });
+        persistWorkspaceDefaults(formState);
+        const result = await apiFetch("/api/member/daily-update", { method: "POST", body: JSON.stringify({ entry_date: formState.date, plan: formState.plan, extra_work: formState.extra_work, challenges: formState.challenges, eta: formState.eta, delivery_mode: formState.delivery_mode, batch_name: formState.batch_name, track_name: formState.track_name, proof_of_work: formState.proof_of_work, client_name: formState.client_name, request_reason: formState.request_reason, is_corporate: !!formState.is_corporate, is_university: !!formState.is_university }) });
         pushToast("success", "Saved", result.message);
         if (result.next?.edit_date) await load({ edit_date: result.next.edit_date, section: "workspace" }, { silent: true });
         else if (result.next?.view === "workspace") { await load({ section: "workspace" }, { silent: true }); }
@@ -353,9 +509,11 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
           { key: "date", label: "Date", render: (item) => item.date },
           { key: "plan", label: "Morning plan", render: (item) => item.plan || "-" },
           { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
+          { key: "delivery_mode", label: "Delivery", render: (item) => prettifyStatus(item.delivery_mode || "-") },
+          { key: "batch_name", label: "Batch", render: (item) => item.batch_name || "-" },
+          { key: "track_name", label: "Track", render: (item) => item.track_name || "-" },
           { key: "client", label: "Client", render: (item) => item.client_name || "-" },
           { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
-          { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={async () => { setView("workspace"); await load({ edit_date: item.date, section: "workspace" }, { silent: true }); }}>Edit</button> },
         ]} />
       </SectionCard>
     </div>;
@@ -385,13 +543,40 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       }} />
     </div>;
   } else if (view === "history") {
-    content = <SectionCard icon={CalendarDays} title="History" copy="Only the requests you raised are shown here." tag={`${dashboardData.request_history.length} requests`}><DataTable emptyMessage="No requests have been raised yet." rows={dashboardData.request_history} pageSize={7} columns={[
-      { key: "date", label: "Date", render: (item) => item.date },
-      { key: "type", label: "Type", render: (item) => prettifyStatus(item.request_type) },
-      { key: "reason", label: "Reason", render: (item) => item.reason || "-" },
-      { key: "status", label: "Status", render: (item) => <span className={`status-chip ${item.status === "approved" ? "status-success" : item.status === "rejected" ? "status-danger" : "status-info"}`}>{prettifyStatus(item.status)}</span> },
-      { key: "reviewed", label: "Reviewed", render: (item) => item.reviewed_at ? formatDateTime(item.reviewed_at) : "-" },
-    ]} /></SectionCard>;
+    content = <div className="page-stack">
+      <SectionCard icon={CalendarDays} title="History" copy="Filter across your submitted updates, raised requests, and generated weekly reports.">
+        <div className="inline-form-row">
+          <FormField label="Record type">
+            <select className="field-input" value={historyFilters.type} onChange={(event) => setHistoryFilters({ ...historyFilters, type: event.target.value })}>
+              <option value="all">All</option>
+              <option value="updates">Daily updates</option>
+              <option value="requests">Requests</option>
+            </select>
+          </FormField>
+          <FormField label="From date"><input className="field-input" type="date" value={historyFilters.from_date} onChange={(event) => setHistoryFilters({ ...historyFilters, from_date: event.target.value })} /></FormField>
+          <FormField label="To date"><input className="field-input" type="date" value={historyFilters.to_date} onChange={(event) => setHistoryFilters({ ...historyFilters, to_date: event.target.value })} /></FormField>
+        </div>
+      </SectionCard>
+      {(historyFilters.type === "all" || historyFilters.type === "updates") ? <SectionCard icon={FileSpreadsheet} title="Daily updates" copy="Edit submitted daily updates in a modal without leaving this page." tag={`${filteredHistoryUpdates.length} updates`}>
+        <DataTable emptyMessage="No daily updates matched the current filter." rows={filteredHistoryUpdates} pageSize={7} columns={[
+          { key: "date", label: "Date", render: (item) => item.date },
+          { key: "plan", label: "Morning plan", render: (item) => item.plan || "-" },
+          { key: "eta", label: "ETA", render: (item) => item.eta || "-" },
+          { key: "client", label: "Client", render: (item) => item.client_name || "-" },
+          { key: "proof", label: "Proof", render: (item) => item.proof_of_work || "-" },
+          { key: "actions", label: "Actions", render: (item) => <button className="secondary-button" onClick={() => { setHistoryEditItem(item); setHistoryEditForm({ ...blankWorkspaceForm(item.date), ...item, request_reason: "" }); }}>Edit</button> },
+        ]} />
+      </SectionCard> : null}
+      {(historyFilters.type === "all" || historyFilters.type === "requests") ? <SectionCard icon={ShieldAlert} title="Requests raised" copy="Track request outcomes and their review status." tag={`${filteredHistoryRequests.length} requests`}>
+        <DataTable emptyMessage="No requests matched the current filter." rows={filteredHistoryRequests} pageSize={7} columns={[
+          { key: "date", label: "Date", render: (item) => item.date },
+          { key: "type", label: "Type", render: (item) => prettifyStatus(item.request_type) },
+          { key: "reason", label: "Reason", render: (item) => item.reason || "-" },
+          { key: "status", label: "Status", render: (item) => <span className={`status-chip ${item.status === "approved" ? "status-success" : item.status === "rejected" ? "status-danger" : "status-info"}`}>{prettifyStatus(item.status)}</span> },
+          { key: "reviewed", label: "Reviewed", render: (item) => item.reviewed_at ? formatDateTime(item.reviewed_at) : "-" },
+        ]} />
+      </SectionCard> : null}
+    </div>;
   } else {
     content = <SectionCard icon={LockKeyhole} title="Password settings" copy="Update your login password from here.">
       <div className="inline-form-row">
@@ -412,6 +597,45 @@ export function MemberApp({ session, pushToast, view, setView, onMenuToggle, tas
       <Header title="Member workspace" copy="A clean, single-sidebar workspace for daily updates, todo tracking, requests, and assigned tasks." onMenuToggle={onMenuToggle} notifications={dashboardData.notifications} unreadCount={dashboardData.unread_notifications} onNotificationOpen={handleNotificationOpen} onNotificationRefresh={refreshNotifications} />
       <Hero title={`${safeUser.first_name || "Member"} ${safeUser.last_name || ""}`} copy="Simple views, clear tracking, and fast access to everything that needs action." meta={[{ label: "Pending requests", value: String(dashboardData.pending_requests.length) }, { label: "Missed days", value: String(dashboardData.missing_day_count) }]} />
       {content}
+      <HistoryEditModal
+        item={historyEditItem}
+        formState={historyEditForm}
+        setFormState={setHistoryEditForm}
+        onClose={() => setHistoryEditItem(null)}
+        today={dashboardData.today}
+        working={working}
+        onSave={async () => {
+          if (!historyEditItem) return;
+          setWorking(true);
+          try {
+            const result = await apiFetch("/api/member/daily-update", {
+              method: "POST",
+              body: JSON.stringify({
+                entry_date: historyEditItem.date,
+                plan: historyEditForm.plan,
+                extra_work: historyEditForm.extra_work,
+                challenges: historyEditForm.challenges,
+                eta: historyEditForm.eta,
+                delivery_mode: historyEditForm.delivery_mode,
+                batch_name: historyEditForm.batch_name,
+                track_name: historyEditForm.track_name,
+                proof_of_work: historyEditForm.proof_of_work,
+                client_name: historyEditForm.client_name,
+                request_reason: historyEditForm.request_reason,
+                is_corporate: !!historyEditForm.is_corporate,
+                is_university: !!historyEditForm.is_university,
+              }),
+            });
+            pushToast("success", "Update saved", result.message);
+            setHistoryEditItem(null);
+            await load({ section: "history" }, { silent: true });
+          } catch (error) {
+            pushToast("error", "Update failed", error.message);
+          } finally {
+            setWorking(false);
+          }
+        }}
+      />
     </main>
   );
 }
