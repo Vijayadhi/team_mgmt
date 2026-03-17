@@ -50,7 +50,7 @@ jobs:
           echo "$PAYLOAD"
 
           curl --fail --show-error --silent \
-            -X POST "https://venerablevignesh-iamneo-teammgmt.hf.space/api/external/missed-days/audit" \
+            -X POST "https://venerablevignesh-iamneo-team-mgmt.hf.space/api/external/missed-days/audit" \
             -H "Content-Type: application/json" \
             -H "X-Trigger-Token: Bearer ${{ secrets.TriggrerToken }}" \
             -d "$PAYLOAD"
