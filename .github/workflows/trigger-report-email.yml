@@ -52,5 +52,5 @@ jobs:
           curl --fail --show-error --silent \
             -X POST "https://venerablevignesh-iamneo-team-mgmt.hf.space/api/external/missed-days/audit" \
             -H "Content-Type: application/json" \
-            -H "X-Trigger-Token: ${{ secrets.TriggrerToken }}" \
+            -H "X-Trigger-Token: sgdjkljsdhsdgfd" \
             -d "$PAYLOAD"
